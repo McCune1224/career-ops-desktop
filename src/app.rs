@@ -7,7 +7,7 @@ use serde_json::json;
 use crate::backend::{call_typed, Backend};
 use crate::bridge::BridgeError;
 use crate::model::{
-    Analysis, Bootstrap, Config, Contacts, CostEstimate, Cv, Document, Followups, FollowupSeed,
+    Analysis, Bootstrap, Config, Contacts, CostEstimate, Cv, CvCheck, Document, Followups, FollowupSeed,
     Liveness, Maintenance, Pipeline, Plugin, Portal, ProfileValidation, Report, RunEvent,
     SearchResults, StoryBank, Usage, Version, WhatsNew,
 };
@@ -100,6 +100,11 @@ pub struct AppState {
     pub liveness: Option<Liveness>,
     /// The last analysis the report screen asked for.
     pub analysis: Option<Analysis>,
+    /// What the CV's structure check found.
+    pub cv_check: Option<CvCheck>,
+    /// The CV templates the core ships.
+    pub cv_templates: Vec<String>,
+
     /// What is running: the client, the bridge protocol and the engine release.
     pub version: Option<Version>,
     /// The last message for the user, and whether it is an error.
@@ -307,6 +312,10 @@ pub struct RunState {
     pub kind: Option<RunKind>,
     pub input: String,
     pub brief: String,
+    /// The cover letter's four answers, and the tone it is written in.
+    pub cover_why: String,
+    pub cover_problem: String,
+    pub cover_approach: String,
     pub log: Vec<LogLine>,
     pub running: bool,
     pub finished: bool,
@@ -402,6 +411,10 @@ pub struct CareerOpsApp {
     pub cv_editor: CvEditor,
     /// The posting-archive form on the documents screen.
     pub archive: ArchiveForm,
+    /// The CV templates the core ships.
+    pub cv_templates: Vec<String>,
+    /// The tone a cover letter is written in.
+    pub cover_tone: String,
     /// The coverage-check form on the portals screen.
     pub coverage: crate::views::portals::CoverageForm,
     /// The board-discovery form on the portals screen.
@@ -433,9 +446,12 @@ impl CareerOpsApp {
             followup_view: FollowupView::default(),
             cv_editor: CvEditor::default(),
             archive: ArchiveForm::default(),
+            cv_templates: Vec::new(),
+            cover_tone: "formal".to_string(),
             coverage: crate::views::portals::CoverageForm::default(),
             discover: crate::views::portals::DiscoverForm::default(),
             story_match: crate::views::interview::StoryMatch::default(),
+
             outcome: OutcomeForm::default(),
             shortlist: Vec::new(),
             bulk_state: "Applied".to_string(),
@@ -891,6 +907,90 @@ impl CareerOpsApp {
             Some(version) => version.protocol == crate::bridge::PROTOCOL_VERSION,
             None => true,
         }
+    }
+
+    /// Check the CV's structure against the file the user wrote.
+    pub fn check_cv_structure(&mut self) {
+        match self.backend.call("cv", json!({ "action": "verify" })) {
+            Ok(value) => {
+                let verdict = value
+                    .get("verdict")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("unknown")
+                    .to_string();
+                let violations = value
+                    .get("violations")
+                    .and_then(serde_json::Value::as_array)
+                    .map(|items| {
+                        items
+                            .iter()
+                            .map(|v| v.as_str().unwrap_or("").to_string())
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default();
+                let empty = violations.is_empty();
+                self.state.cv_check = Some(CvCheck {
+                    verdict,
+                    violations: violations.clone(),
+                });
+                if empty {
+                    self.state.say("the CV kept its structure");
+                } else {
+                    self.state
+                        .fail(format!("{} structure problem(s) in the CV", violations.len()));
+                }
+            }
+            Err(e) => self.state.fail(format!("could not check the CV: {e}")),
+        }
+    }
+
+    /// Load the CV templates the core ships.
+    pub fn load_cv_templates(&mut self) {
+        match self.backend.call("config", json!({ "action": "templates" })) {
+            Ok(value) => {
+                let templates = value
+                    .get("templates")
+                    .and_then(serde_json::Value::as_array)
+                    .map(|items| {
+                        items
+                            .iter()
+                            .filter_map(|v| {
+                                v.get("name")
+                                    .and_then(|n| n.as_str())
+                                    .map(|s| s.to_string())
+                            })
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default();
+                self.state.cv_templates = templates;
+            }
+            Err(e) => self.state.fail(format!("could not list the CV templates: {e}")),
+        }
+    }
+
+    /// Choose the template the `pdf` run fills.
+    pub fn set_cv_template(&mut self, name: &str) {
+        match self
+            .backend
+            .call("config", json!({ "action": "setCvTemplate", "template": name }))
+        {
+            Ok(value) => {
+                let resolved = value
+                    .get("resolved")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("")
+                    .to_string();
+                self.load_config();
+                self.state
+                    .say(format!("the CV template is now {resolved}"));
+            }
+            Err(e) => self.state.fail(format!("could not set the CV template: {e}")),
+        }
+    }
+
+    /// The skill gaps the pipeline shows, from the core's own map.
+    pub fn load_skill_gaps(&mut self) {
+        self.analysis_action("upskill", "");
     }
 
     /// Ask for one analysis and keep what came back.

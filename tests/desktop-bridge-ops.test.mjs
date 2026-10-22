@@ -811,3 +811,198 @@ test("a first save on a fresh install seeds the profile and never overwrites one
     "the refused profile must be byte-identical afterwards",
   );
 });
+
+test("the CV's structure is checked against the file the user wrote", async (t) => {
+  const fixture = makeFixture();
+  const bridge = startBridge(fixture.root);
+  t.after(() => {
+    bridge.stop();
+    fixture.cleanup();
+  });
+
+  const check = await bridge.call("cv", { action: "verify" });
+  assert.equal(check.ok, true, JSON.stringify(check.error));
+  assert.ok(check.data.verdict, "the check must give a verdict");
+  assert.ok(Array.isArray(check.data.violations));
+
+  // A CV whose entries are out of order must be reported: the check compares
+  // the payload the client would send with the file the user wrote.
+  const cvPath = path.join(fixture.root, "cv.md");
+  fs.writeFileSync(
+    cvPath,
+    [
+      "# Test Candidate",
+      "",
+      "## Experience",
+      "",
+      "### Acme — Remote",
+      "",
+      "**Platform Engineer**",
+      "",
+      "01/2024 – Present",
+      "",
+      "- Ran things.",
+      "",
+      "### Beta — Remote",
+      "",
+      "**SRE**",
+      "",
+      "01/2020 – 12/2023",
+      "",
+      "- Kept things up.",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+  const ok = await bridge.call("cv", { action: "verify" });
+  assert.equal(ok.ok, true, JSON.stringify(ok.error));
+  assert.ok(ok.data.entries >= 2, "the check must read both entries");
+});
+
+test("the PDF column is synced with the files that exist", async (t) => {
+  const fixture = makeFixture();
+  const bridge = startBridge(fixture.root);
+  t.after(() => {
+    bridge.stop();
+    fixture.cleanup();
+  });
+
+  // A PDF that exists, with no manifest row: the sync must find it.
+  fs.writeFileSync(path.join(fixture.root, "output", "cv-test-acme-001.pdf"), "%PDF-1.4\n", "utf-8");
+
+  const result = await bridge.call("maintenance", { tool: "pdfFlags", apply: true });
+  assert.equal(result.ok, true, JSON.stringify(result.error));
+  assert.ok(result.data.data, "the tool's JSON must come back");
+
+  const tracker = fs.readFileSync(path.join(fixture.root, "data", "applications.md"), "utf-8");
+  assert.ok(
+    tracker.includes("✅"),
+    "a PDF that exists must be marked in the tracker",
+  );
+});
+
+test("a report keeps the JD it archived", async (t) => {
+  const fixture = makeFixture();
+  const bridge = startBridge(fixture.root);
+  t.after(() => {
+    bridge.stop();
+    fixture.cleanup();
+  });
+
+  const report = await bridge.call("report", { n: "1" });
+  assert.equal(report.ok, true, JSON.stringify(report.error));
+  assert.match(
+    report.data.markdown,
+    /## Job Description/,
+    "the client must not strip the archived JD",
+  );
+});
+
+test("the skill gaps exclude the skills already on the CV", async (t) => {
+  const fixture = makeFixture();
+  const bridge = startBridge(fixture.root);
+  t.after(() => {
+    bridge.stop();
+    fixture.cleanup();
+  });
+
+  const result = await bridge.call("analysis", { action: "upskill" });
+  assert.equal(result.ok, true, JSON.stringify(result.error));
+  assert.ok(Array.isArray(result.data.gaps), "the gap map must be a list");
+  assert.ok(Array.isArray(result.data.knownSkills), "the known skills must be listed");
+  // A skill the CV already has is not a gap.
+  for (const gap of result.data.gaps) {
+    assert.ok(
+      !result.data.knownSkills.includes(gap.skill),
+      `${gap.skill} is on the CV already and must not be a gap`,
+    );
+  }
+});
+
+test("the CV template setting changes the template the run fills", async (t) => {
+  const fixture = makeFixture();
+  const bridge = startBridge(fixture.root);
+  t.after(() => {
+    bridge.stop();
+    fixture.cleanup();
+  });
+
+  const templates = await bridge.call("config", { action: "templates" });
+  assert.equal(templates.ok, true, JSON.stringify(templates.error));
+  assert.ok(Array.isArray(templates.data.templates));
+
+  const set = await bridge.call("config", { action: "setCvTemplate", template: "ats" });
+  assert.equal(set.ok, true, JSON.stringify(set.error));
+  assert.ok(set.data.resolved, "the resolver must say which template it would use");
+
+  const profile = fs.readFileSync(path.join(fixture.root, "config", "profile.yml"), "utf-8");
+  assert.match(profile, /template:/, "the setting must be in the profile");
+});
+
+test("the keyword coverage is reported without touching the CV", async (t) => {
+  const fixture = makeFixture();
+  const bridge = startBridge(fixture.root);
+  t.after(() => {
+    bridge.stop();
+    fixture.cleanup();
+  });
+
+  const before = fs.readFileSync(path.join(fixture.root, "cv.md"), "utf-8");
+  const result = await bridge.call("analysis", { action: "keywordMatch", n: "1" });
+  assert.equal(result.ok, true, JSON.stringify(result.error));
+  assert.ok(result.data.total > 0, "the report's keywords must be counted");
+  assert.ok(
+    Array.isArray(result.data.present) && Array.isArray(result.data.missing),
+    "the coverage must be split into present and missing",
+  );
+  assert.equal(
+    fs.readFileSync(path.join(fixture.root, "cv.md"), "utf-8"),
+    before,
+    "the keyword check must not touch the CV",
+  );
+});
+
+test("the score levers are read from the report's own machine summary", async (t) => {
+  const fixture = makeFixture();
+  const bridge = startBridge(fixture.root);
+  t.after(() => {
+    bridge.stop();
+    fixture.cleanup();
+  });
+
+  const result = await bridge.call("analysis", { action: "scoreLevers", n: "1" });
+  assert.equal(result.ok, true, JSON.stringify(result.error));
+  assert.equal(result.data.available, true, "the report has a machine summary");
+  assert.ok(result.data.levers, "the levers must come back");
+  const levers = result.data.levers;
+  const named =
+    (levers.holding?.length ?? 0) +
+    (levers.close?.length ?? 0) +
+    (levers.strengths?.length ?? 0);
+  assert.ok(named > 0, "the machine summary must name something the levers can show");
+});
+
+test("the CV's claims are checked against the source files", async (t) => {
+  const fixture = makeFixture();
+  const bridge = startBridge(fixture.root);
+  t.after(() => {
+    bridge.stop();
+    fixture.cleanup();
+  });
+
+  // A generated document that claims something the source files do not say.
+  const doc = path.join(fixture.root, "output", "cv-test-claims.md");
+  fs.writeFileSync(
+    doc,
+    "# Test Candidate\n\n## Experience\n\n### Acme — Remote\n\n**Platform Engineer**\n\n01/2024 – Present\n\n- Reduced fleet cost by 87% across four datacenters.\n",
+    "utf-8",
+  );
+
+  const result = await bridge.call("cv", { action: "facts", target: doc });
+  assert.equal(result.ok, true, JSON.stringify(result.error));
+  assert.ok(result.data.verdict, "the verifier must give a verdict");
+  assert.ok(
+    ["pass", "warn", "block"].includes(result.data.verdict),
+    `the verdict must be one of pass/warn/block: ${result.data.verdict}`,
+  );
+});

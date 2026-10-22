@@ -16,6 +16,7 @@ import {
   canonicalLabels,
   isMapping,
   profilePatchError,
+  resolveCvTemplate,
 } from "../engine.mjs";
 import { runNode, BridgeError, parseJsonOutput } from "../util.mjs";
 
@@ -124,6 +125,68 @@ export async function handle(params) {
     const merged = deepMerge(base, proposed);
     atomicWriteWithBackup(file, yaml.dump(merged, { lineWidth: 100, noRefs: true }));
     return { ok: true, seeded };
+  }
+
+  if (action === "setCvTemplate") {
+    // The template the `pdf` run fills. It lives in config/profile.yml under
+    // `cv.template`, which is where the core's own resolver reads it from, so
+    // the CLI and this client pick the same template.
+    const name = String(params.template ?? "").trim();
+    const root = careerOpsRoot();
+    const file = profilePath();
+    let base = {};
+    if (!fs.existsSync(file)) {
+      try {
+        base = yaml.load(fs.readFileSync(path.join(root, "config", "profile.example.yml"), "utf8")) || {};
+      } catch {
+        base = {};
+      }
+    } else {
+      let parsed;
+      try {
+        parsed = yaml.load(fs.readFileSync(file, "utf8"));
+      } catch {
+        throw new BridgeError(
+          "conflict",
+          "config/profile.yml exists but is not valid YAML — refusing to overwrite it.",
+        );
+      }
+      if (!isMapping(parsed)) {
+        throw new BridgeError(
+          "conflict",
+          "config/profile.yml must contain named settings, not a list or single value. Refusing to overwrite it.",
+        );
+      }
+      base = parsed;
+    }
+    const merged = { ...base, cv: { ...(isMapping(base.cv) ? base.cv : {}) } };
+    if (name) {
+      merged.cv.template = name;
+    } else {
+      delete merged.cv.template;
+    }
+    atomicWriteWithBackup(file, yaml.dump(merged, { lineWidth: 100, noRefs: true }));
+    // The resolver answers with the template it would actually use, so the
+    // screen shows the real thing and not the name that was typed.
+    const resolved = await resolveCvTemplate(root);
+    return { ok: true, template: name, resolved };
+  }
+
+  if (action === "templates") {
+    // The templates the core ships, from its own resolver.
+    const script = rootScript("cv-templates");
+    if (!fs.existsSync(script)) {
+      throw new BridgeError(
+        "core-script-missing",
+        "listing the CV templates needs the career-ops scripts; this root has data only",
+      );
+    }
+    const res = await runNode(process.execPath, [script, "list", "cv"], {
+      cwd: careerOpsRoot(),
+      timeout: 30_000,
+    });
+    const parsed = parseJsonOutput(res.stdout);
+    return { ok: res.code === 0, templates: Array.isArray(parsed) ? parsed : [], output: res.output };
   }
 
   if (action === "validate") {

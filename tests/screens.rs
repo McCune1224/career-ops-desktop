@@ -806,8 +806,12 @@ fn clicking_a_run_kind_switches_the_input_and_the_hint() {
         "the input label did not follow the kind"
     );
     assert!(
-        shows(&harness, "Brief (what the letter should say)"),
-        "the brief field is missing for a cover letter"
+        shows(&harness, "The letter's four answers"),
+        "the cover letter's answers are missing"
+    );
+    assert!(
+        shows(&harness, "Tone"),
+        "the cover letter's tone picker is missing"
     );
 }
 
@@ -1444,4 +1448,68 @@ fn a_bridge_that_dies_fails_the_pending_calls_with_bridge_gone() {
     );
 
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn the_cv_screen_offers_the_structure_check_and_the_skill_gaps() {
+    let app = app_with(&all_fixtures());
+    let harness = harness_for(app, |ui, app| views::cv::ui(ui, app));
+
+    assert!(
+        shows(&harness, "Check the structure"),
+        "the CV screen must offer the structure check"
+    );
+    assert!(
+        shows(&harness, "Skill gaps"),
+        "the CV screen must offer the skill gaps"
+    );
+    assert!(
+        shows(&harness, "Template"),
+        "the CV screen must offer the template picker"
+    );
+}
+
+#[test]
+fn the_run_screen_offers_the_cover_tones() {
+    let app = app_with(&all_fixtures());
+    let mut harness = harness_for(app, |ui, app| views::run::ui(ui, app));
+
+    harness.get_by_label("Draft a cover letter").click();
+    harness.run();
+
+    assert!(
+        shows(&harness, "Tone"),
+        "a cover letter must offer a tone"
+    );
+    assert!(
+        shows(&harness, "The letter's four answers"),
+        "a cover letter must ask the four questions the mode asks"
+    );
+}
+
+#[test]
+fn the_documents_screen_lists_what_was_generated() {
+    let mut app = app_with(&all_fixtures());
+    app.state.documents = Some(vec![career_ops_desktop::model::Document {
+        filename: "cv-alex-acme-001.pdf".into(),
+        kind: "cv".into(),
+        date: Some("2026-01-02".into()),
+        report_id: Some("1".into()),
+        format: Some("pdf".into()),
+        id: "abc".into(),
+    }]);
+    let harness = harness_for(app, |ui, app| views::documents::ui(ui, app));
+
+    assert!(
+        shows(&harness, "Generated documents"),
+        "the documents screen must show the list"
+    );
+    assert!(
+        shows(&harness, "cv-alex-acme-001.pdf"),
+        "the generated document must be listed"
+    );
+    assert!(
+        shows(&harness, "Archive a posting"),
+        "the documents screen must offer the archive"
+    );
 }

@@ -112,6 +112,7 @@ import { collectWhatsNew, resolveOfferLimit } from "@/lib/whats-new.mjs";
 import { evaluatedKeys, isEvaluated } from "@/lib/whats-new-suppression.mjs";
 import { getNormalizeTextKey } from "@/lib/core/text-key";
 import { loadPortalsDocument, mergePortalFilters, watchedCompanies } from "@/lib/portals-config.mjs";
+import { htmlText } from "@/lib/cv-studio/html-blocks.mjs";
 import {
   splitSections,
   sectionPreview,
@@ -251,6 +252,7 @@ export {
   isLeadSection,
   firstProseParagraph,
   cleanHeading,
+  htmlText,
 };
 
 // The engine module files this bridge depends on, by their path inside web/src.
@@ -306,4 +308,5 @@ export const ENGINE_MODULES = [
   "lib/core/text-key",
   "lib/portals-config.mjs",
   "lib/report-sections.mjs",
+  "lib/cv-studio/html-blocks.mjs",
 ];

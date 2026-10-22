@@ -83,15 +83,44 @@ fn form_card(ui: &mut egui::Ui, app: &mut CareerOpsApp, t: Palette) {
         if matches!(app.run.kind, Some(RunKind::Cover)) {
             ui.add_space(8.0);
             ui.label(
-                RichText::new("Brief (what the letter should say)")
+                RichText::new("The letter's four answers — the mode asks for these")
                     .text_style(theme::meta())
                     .color(t.fg_muted),
             );
             ui.add(
-                egui::TextEdit::multiline(&mut app.run.brief)
+                egui::TextEdit::singleline(&mut app.run.cover_why)
                     .desired_width(f32::INFINITY)
-                    .desired_rows(3),
+                    .hint_text("why this role"),
             );
+            ui.add(
+                egui::TextEdit::singleline(&mut app.run.cover_problem)
+                    .desired_width(f32::INFINITY)
+                    .hint_text("the problem to solve"),
+            );
+            ui.add(
+                egui::TextEdit::singleline(&mut app.run.cover_approach)
+                    .desired_width(f32::INFINITY)
+                    .hint_text("your approach"),
+            );
+            ui.horizontal(|ui| {
+                ui.label(
+                    RichText::new("Tone")
+                        .text_style(theme::meta())
+                        .color(t.fg_muted),
+                );
+                egui::ComboBox::from_id_salt("cover-tone")
+                    .selected_text(RichText::new(&app.cover_tone).color(t.fg))
+                    .show_ui(ui, |ui| {
+                        for tone in COVER_TONES {
+                            if ui
+                                .selectable_label(&app.cover_tone == tone, tone)
+                                .clicked()
+                            {
+                                app.cover_tone = tone.to_string();
+                            }
+                        }
+                    });
+            });
         }
 
         if let Some(estimate) = app.run.estimate.clone() {
@@ -258,6 +287,9 @@ fn progress_card(ui: &mut egui::Ui, app: &CareerOpsApp, t: Palette) {
     );
 }
 
+/// The tones a cover letter can be written in, from the engine's own set.
+pub const COVER_TONES: [&str; 4] = ["formal", "direct", "conversational", "mirror"];
+
 /// "45s" / "2m 14s", for a clock a person reads at a glance.
 pub fn short_duration(seconds: f64) -> String {
     let total = seconds.max(0.0).round() as u64;
@@ -303,7 +335,17 @@ pub fn start(app: &mut CareerOpsApp) {
     app.run.error = None;
     app.run.finished = false;
     app.run.report_n = None;
-    let brief = if app.run.brief.trim().is_empty() {
+    // The cover brief is the engine's OBJECT of four answers and a tone; the
+    // client sends it as JSON text, which the bridge parses back.
+    let brief = if kind == RunKind::Cover {
+        let payload = serde_json::json!({
+            "why": app.run.cover_why,
+            "problem": app.run.cover_problem,
+            "approach": app.run.cover_approach,
+            "tone": app.cover_tone,
+        });
+        Some(payload.to_string())
+    } else if app.run.brief.trim().is_empty() {
         None
     } else {
         Some(app.run.brief.clone())

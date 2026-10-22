@@ -3,8 +3,86 @@
 use egui::{Margin, RichText};
 
 use crate::app::CareerOpsApp;
-use crate::theme;
+use crate::theme::{self, Palette};
 use crate::views::{frame, pill};
+
+/// The checks: the CV's structure, and the gaps the pipeline shows.
+fn checks_card(ui: &mut egui::Ui, app: &mut CareerOpsApp, t: Palette) {
+    theme::card(ui, t).show(ui, |ui| {
+        crate::views::card_title(ui, "Checks", |ui| {
+            ui.label(
+                RichText::new("read-only — neither of these changes your CV")
+                    .text_style(theme::meta())
+                    .color(t.fg_muted),
+            );
+        });
+        ui.add_space(8.0);
+        ui.horizontal_wrapped(|ui| {
+            if crate::views::ghost_button(ui, "Check the structure").clicked() {
+                app.check_cv_structure();
+            }
+            if crate::views::ghost_button(ui, "Skill gaps").clicked() {
+                app.load_skill_gaps();
+            }
+        });
+        if let Some(check) = app.state.cv_check.clone() {
+            ui.add_space(6.0);
+            ui.horizontal_wrapped(|ui| {
+                pill(
+                    ui,
+                    &check.verdict,
+                    if check.verdict == "pass" { t.good } else { t.warn },
+                );
+            });
+            for violation in &check.violations {
+                ui.label(
+                    RichText::new(format!("— {violation}"))
+                        .text_style(theme::meta())
+                        .color(t.warn),
+                );
+            }
+        }
+        if let Some(analysis) = app.state.analysis.clone() {
+            if analysis.action == "upskill" {
+                ui.add_space(8.0);
+                ui.label(
+                    RichText::new(&analysis.title)
+                        .text_style(theme::meta())
+                        .strong()
+                        .color(t.fg),
+                );
+                ui.label(RichText::new(&analysis.body).color(t.fg_muted));
+            }
+        }
+    });
+}
+
+/// The template the `pdf` run fills.
+fn template_card(ui: &mut egui::Ui, app: &mut CareerOpsApp, t: Palette) {
+    theme::card(ui, t).show(ui, |ui| {
+        crate::views::card_title(ui, "Template", |ui| {
+            if crate::views::ghost_button(ui, "Reload").clicked() {
+                app.load_cv_templates();
+            }
+        });
+        ui.add_space(8.0);
+        if app.state.cv_templates.is_empty() {
+            ui.label(
+                RichText::new("The template list has not been read yet.")
+                    .text_style(theme::meta())
+                    .color(t.fg_muted),
+            );
+        }
+        for name in app.state.cv_templates.clone() {
+            ui.horizontal(|ui| {
+                ui.label(RichText::new(&name).monospace().color(t.fg));
+                if crate::views::ghost_button(ui, "Use this one").clicked() {
+                    app.set_cv_template(&name);
+                }
+            });
+        }
+    });
+}
 
 /// Draw the CV screen.
 pub fn ui(ui: &mut egui::Ui, app: &mut CareerOpsApp) {
@@ -93,6 +171,11 @@ pub fn ui(ui: &mut egui::Ui, app: &mut CareerOpsApp) {
                         .color(t.fg_muted),
                 );
             }
+
+            ui.add_space(14.0);
+            checks_card(ui, app, t);
+            ui.add_space(14.0);
+            template_card(ui, app, t);
         },
     );
 }

@@ -84,6 +84,30 @@ const REPORT = `# Evaluation: Acme — Platform Engineer
 
 A solid match.
 
+## Keywords extracted
+
+platform engineer, python, kubernetes, terraform
+
+## Machine Summary
+
+\`\`\`yaml
+final_decision: apply
+top_strengths:
+  - Python
+hard_stops: []
+soft_gaps:
+  - Kubernetes
+requirement_importance:
+  - requirement: Run an estate
+    importance: critical
+    match: strong
+confidence_gaps: []
+\`\`\`
+
+## Job Description (archived verbatim)
+
+We are hiring a platform engineer to run our estate.
+
 VERDICT: 4.2/5 — apply
 `;
 
@@ -131,6 +155,11 @@ export function makeFixture(options = {}) {
   fs.writeFileSync(path.join(root, "data/applications.md"), TRACKER);
   fs.writeFileSync(path.join(root, "data/pipeline.md"), PIPELINE);
   fs.writeFileSync(path.join(root, "data/follow-ups.md"), "# Follow-ups\n\n");
+  fs.writeFileSync(
+    path.join(root, "data/pdf-index.tsv"),
+    `1\t${path.join(root, "output", "cv-test-acme-001.pdf")}\t\tpdf\t2026-01-02\tcv\n`,
+    "utf-8",
+  );
   fs.writeFileSync(path.join(root, "reports/001-acme-2026-01-02.md"), REPORT);
   fs.writeFileSync(path.join(root, "cv.md"), "# Test Candidate\n\n## Experience\n\n### Acme — Remote\n\n**Platform Engineer**\n\n01/2024 – Present\n\n- Ran things.\n");
   fs.writeFileSync(path.join(root, "config/profile.yml"), PROFILE);

@@ -584,6 +584,13 @@ pub struct Version {
     pub node: String,
 }
 
+/// What the CV's structure check found.
+#[derive(Debug, Clone, Default)]
+pub struct CvCheck {
+    pub verdict: String,
+    pub violations: Vec<String>,
+}
+
 /// One analysis result, as the screen shows it.
 #[derive(Debug, Clone, Default)]
 pub struct Analysis {

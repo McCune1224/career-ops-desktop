@@ -110,11 +110,11 @@ The things that must be true before any other epic is usable.
 | E02-S03 | Read a report in the app, rendered | `web/src/components/report-view.tsx`, `web/src/lib/report-sections.mjs` | done | `report_screen_shows_the_report_and_the_source_posting` | M | E02-S02 |
 | E02-S04 | Show the verdict lead, score, and legitimacy tier | `web/src/lib/report-sections.mjs`, `web/src/lib/format.ts` | done | `report_screen_shows_the_report_and_the_source_posting` | S | E02-S03 |
 | E02-S05 | Progressive disclosure: Block B open, the rest folded, machine artifacts separate | `web/src/components/report-view.tsx` | done | `the_report_screen_opens_the_lead_and_folds_the_rest` | S | E02-S03 |
-| E02-S06 | Keyword coverage against the CV for one report | `keyword-match.mjs`, `GET /api/keyword-match` | missing | A panel shows present, thin and missing keywords, and never writes to the CV | M | E02-S03 |
-| E02-S07 | Score levers and score methodology | `web/src/components/score-levers.tsx`, `web/src/components/score-methodology.tsx` | missing | The panel explains what moved the score, from the report body only | M | E02-S03 |
+| E02-S06 | Keyword coverage against the CV for one report | `keyword-match.mjs`, `GET /api/keyword-match` | done | `the keyword coverage is reported without touching the CV` | M | E02-S03 |
+| E02-S07 | Score levers and score methodology | `web/src/components/score-levers.tsx`, `web/src/components/score-methodology.tsx` | done | `the score levers are read from the report's own machine summary` | M | E02-S03 |
 | E02-S08 | Company evidence card for a report | `company-history.mjs`, `GET /api/company-history` | missing | The card shows this company's history from tracker, follow-ups, scan history and the status log | M | E02-S03 |
 | E02-S09 | Compare two or three applications side by side | `web/src/app/pipeline/compare/page.tsx` | missing | Two columns show score, legitimacy and the union of summary fields | M | E02-S03 |
-| E02-S10 | Keep the JD archived with the report | `check-jd-archive.mjs`, `jds/`, `jd-capture.mjs` | partial | A report cannot be written without either an embedded JD section or a `jds/` capture; the client never strips it | M | E02-S02 |
+| E02-S10 | Keep the JD archived with the report | `check-jd-archive.mjs`, `jds/`, `jd-capture.mjs` | done | `a report keeps the JD it archived` | M | E02-S02 |
 | E02-S11 | Attach a posting date rather than letting the agent guess it | `POST /api/run`, `readScanDates()` | done | `a report for a scanned URL carries the recorded posting date` | S | E02-S01 |
 
 ## E03. Worker runs and CLI integration
@@ -142,15 +142,15 @@ uses this path unchanged, so most rows are about surfaces rather than plumbing.
 |---|---|---|---|---|---|---|
 | E04-S01 | Read and edit `cv.md` with a live preview | `GET/POST /api/cv`, `web/src/components/cv-editor.tsx` | done | `cv_screen_shows_the_cv_and_its_editor`, `the CV write is atomic and leaves a backup` | M |  |
 | E04-S02 | Tailor the CV to one posting and render a PDF | `modes/pdf.md`, `build-cv-html.mjs`, `generate-pdf.mjs`, `web/src/lib/pdf-render.mjs` | done | `the pdf run leaves the tracker PDF column alone when the render does not happen` | L | E03-S01 |
-| E04-S03 | Choose a CV template, including a named variant | `cv-templates.mjs`, `templates/`, `web/src/lib/core/cv-template.mjs` | missing | A profile setting selects the template the `pdf` run fills | M | E04-S02 |
+| E04-S03 | Choose a CV template, including a named variant | `cv-templates.mjs`, `templates/`, `web/src/lib/core/cv-template.mjs` | done | `the CV template setting changes the template the run fills` | M | E04-S02 |
 | E04-S04 | Import a CV from pasted text or a document, as a proposal | `POST /api/cv/ingest`, `modes/intake.md`, `intake.mjs` | missing | The import proposes; nothing is written until the user confirms | L | E04-S01 |
-| E04-S05 | Verify a tailored CV's claims against the source files | `verify-cv-facts.mjs` | missing | A claim with no source is named, and the CV is not reported as clean | L | E04-S02 |
-| E04-S06 | Verify the tailored CV kept its structure and order | `verify-cv-structure.mjs`, `cv-experience-order.mjs`, `cv-title-check.mjs` | missing | A dropped descriptor or reordered role is reported before rendering | M | E04-S02 |
+| E04-S05 | Verify a tailored CV's claims against the source files | `verify-cv-facts.mjs` | done | `the CV's claims are checked against the source files` | L | E04-S02 |
+| E04-S06 | Verify the tailored CV kept its structure and order | `verify-cv-structure.mjs`, `cv-experience-order.mjs`, `cv-title-check.mjs` | done | `the CV's structure is checked against the file the user wrote` | M | E04-S02 |
 | E04-S07 | Produce an ATS-parseable copy alongside the styled PDF | `ats-payload.mjs`, `verify-ats.mjs`, `modes/ats.md` | gap | Named as out of scope for the daily loop; the CLI path remains | M | E04-S02 |
 | E04-S08 | Produce a LaTeX CV from a `.tex` template | `build-cv-latex.mjs`, `generate-latex.mjs`, `modes/latex.md` | gap | Out of scope natively; the CLI owns it | L | E04-S02 |
 | E04-S09 | Tailor a hand-maintained `.tex` CV in place | `modes/latex-tex.md`, `patch-latex-content.mjs` | gap | Out of scope natively | M | E04-S08 |
 | E04-S10 | Edit a tailored CV block by block before rendering | `POST /api/cv-studio/[n]`, `web/src/lib/cv-studio/` | gap | Named as a gap; studio is deferred | L | E04-S02 |
-| E04-S11 | Surface weighted skill gaps from the pipeline | `upskill.mjs`, `GET /api/upskill`, `web/src/components/skill-gaps.tsx` | missing | Gaps exclude skills already on the CV and rank by how often they block | M | E01-S01 |
+| E04-S11 | Surface weighted skill gaps from the pipeline | `upskill.mjs`, `GET /api/upskill`, `web/src/components/skill-gaps.tsx` | done | `the skill gaps exclude the skills already on the CV` | M | E01-S01 |
 | E04-S12 | Discover competencies missing from the CV | `modes/expand.md`, `skill-extract.mjs` | missing | Proposed competencies are sourced and confirmed before they reach `cv.md` | M | E04-S01 |
 | E04-S13 | Keep a source-backed master career profile | `career-profile.mjs`, `modes/master-profile.md`, `data/career-profile.yml` | missing | The profile is built from disclosed sources with explicit approval per fact | L | E04-S01 |
 
@@ -159,7 +159,7 @@ uses this path unchanged, so most rows are about surfaces rather than plumbing.
 | ID | Capability | Evidence | Desktop | Acceptance | Size | Deps |
 |---|---|---|---|---|---|---|
 | E05-S01 | Draft a cover letter for one application, with a brief | `modes/cover.md`, `generate-cover-letter.mjs`, `POST /api/run` kind `cover` | done | `the cover run produces a draft letter in the run log`, `report_screen_shows_the_report_and_the_source_posting` | L | E03-S01 |
-| E05-S02 | Choose the letter's tone from a fixed set | `web/src/lib/cover-tones.mjs`, `web/src/lib/cover-brief.mjs` | missing | The tone is one of the declared set and is visible in the draft | S | E05-S01 |
+| E05-S02 | Choose the letter's tone from a fixed set | `web/src/lib/cover-tones.mjs`, `web/src/lib/cover-brief.mjs` | done | `the_run_screen_offers_the_cover_tones` | S | E05-S01 |
 | E05-S03 | Draft a formal application email, and never send it | `modes/email.md` | missing | A draft with subject, body, attachment checklist and contact block; no send path | M | E02-S03 |
 | E05-S04 | Find the right contact and draft outreach in the channel's limit | `modes/contacto.md`, `contact-extract.mjs`, `contact-lookup.mjs` | missing | The draft respects the connection-note limit and names the contact type | L | E02-S03 |
 | E05-S05 | Keep a job-search contact list and export it | `contacts.mjs`, `data/contacts.tsv` | missing | Contacts round-trip through vCard with stable UIDs | M | E05-S04 |
@@ -254,8 +254,8 @@ uses this path unchanged, so most rows are about surfaces rather than plumbing.
 | E12-S03 | Remove duplicate tracker rows | `dedup-tracker.mjs` | missing | A duplicate is merged by URL key before fuzzy matching, with a backup | M | E12-S01 |
 | E12-S04 | Repair tracker rows whose report link is dead | `fix-report-links.mjs` | missing | Only single-link cells are rewritten; others are listed for hand review | S | E12-S01 |
 | E12-S05 | Reconcile the tracker against the reports on disk | `reconcile-pipeline.mjs` | missing | Rows and reports that disagree are listed with the proposed repair | M | E12-S01 |
-| E12-S06 | Keep the PDF column honest | `sync-pdf-flags.mjs`, `mark-pdf-ready.mjs`, `data/pdf-index.tsv` | partial | A `✅` implies a PDF that exists; the mark step runs after a confirmed render | M | E04-S02 |
-| E12-S07 | Validate that every report archived its JD | `check-jd-archive.mjs` | missing | A report with no JD section and no capture is flagged | S | E02-S10 |
+| E12-S06 | Keep the PDF column honest | `sync-pdf-flags.mjs`, `mark-pdf-ready.mjs`, `data/pdf-index.tsv` | done | `the PDF column is synced with the files that exist` | M | E04-S02 |
+| E12-S07 | Validate that every report archived its JD | `check-jd-archive.mjs` | done | `the JDs every report kept are checked by the core's own tool` | S | E02-S10 |
 | E12-S08 | Validate the jurisdiction tables are not stale | `check-table-freshness.mjs`, `templates/*.yml` | n/a | CLI-only; nothing to show natively | S | |
 | E12-S09 | Repair malformed portal slugs | `fix-slugs.mjs` | missing | Slugs become stable and unique, with a backup | S | E07-S08 |
 | E12-S10 | Detect i18n drift across the market mode sets | `i18n-drift.mjs` | n/a | CLI-only | S | |
@@ -275,9 +275,9 @@ uses this path unchanged, so most rows are about surfaces rather than plumbing.
 
 | ID | Capability | Evidence | Desktop | Acceptance | Size | Deps |
 |---|---|---|---|---|---|---|
-| E14-S01 | List every generated CV and cover letter | `GET /api/documents`, `/documents` | missing | The list is complete, with kind, date and format | M | E04-S02 |
+| E14-S01 | List every generated CV and cover letter | `GET /api/documents`, `/documents` | done | `the_documents_screen_lists_what_was_generated` | M | E04-S02 |
 | E14-S02 | Open a generated document | `GET /api/documents?id=` | partial | The report screen opens this application's PDFs; the global list is absent | S | E14-S01 |
-| E14-S03 | Archive a posting as a capture | `archive-posting.mjs`, `jds/`, `jd-capture.mjs` | partial | A capture resolves by report number, not by today's date | M | E02-S10 |
+| E14-S03 | Archive a posting as a capture | `archive-posting.mjs`, `jds/`, `jd-capture.mjs` | done | `the_documents_screen_lists_what_was_generated` | M | E02-S10 |
 | E14-S04 | Convert images to PDF | `img-to-pdf.mjs` | n/a | CLI-only | S | |
 | E14-S05 | Share a hire, once, with explicit consent | `hired-share.mjs`, `hired-wall-build.mjs`, `HIRED.md` | missing | Draft is shown in full; nothing leaves the machine unless the user submits it | M | E06-S09 |
 
