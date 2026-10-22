@@ -59,8 +59,14 @@ export async function handle(params) {
     const args = ["--url", url, "--pdf", pdf];
     if (params.cover) args.push("--cover", String(params.cover));
     const res = await runCoreScript("prepare-application", args, { timeout: 60_000 });
+    if (res.code !== 0) {
+      throw new BridgeError(
+        "bad-request",
+        res.output || "the form could not be prepared",
+      );
+    }
     return {
-      available: res.code === 0,
+      available: true,
       // Never a submission: the core script has no submit path at all.
       submitted: false,
       output: res.output,

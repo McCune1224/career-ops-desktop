@@ -152,6 +152,9 @@ export async function handle(params) {
     const applications = readApplications();
     const columns = chosen.map((id) => {
       const row = applications.find((r) => String(r.n).trim() === String(id));
+      // The summary fields are the report's own two-column table, so the
+      // comparison shows what the reports say and not what the tracker repeats.
+      const report = readReport(String(id));
       return {
         n: String(id),
         company: row?.company ?? "",
@@ -159,7 +162,7 @@ export async function handle(params) {
         score: row?.score ?? "",
         status: row?.status ?? "",
         date: row?.date ?? "",
-        fields: row ? summaryFields(row) : [],
+        fields: report ? summaryFields(report.content) : [],
       };
     });
     return { ids: chosen, columns };

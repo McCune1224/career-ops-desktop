@@ -140,6 +140,19 @@ async function runOne(params, ctx) {
     throw new BridgeError("bad-request", "input and cliId required");
   }
 
+  // A MODE run: the agent follows the mode file in the checkout, and the
+  // prompt that says so is the client's (see bridge/mode-prompt.mjs and
+  // DECISIONS.md D-15). The mode file must be there, and it is checked FIRST:
+  // a missing mode is a configuration fact the user can act on, and it is
+  // more useful than a complaint about the CLI.
+  const modeRun = isModeKind(kind);
+  if (modeRun && !fs.existsSync(modeFile(kind))) {
+    throw new BridgeError(
+      "incomplete-checkout",
+      `This needs the ${MODE_KINDS[kind].file} mode file; this data root has no modes.`,
+    );
+  }
+
   const resolved = resolveCliOrFallback(requestedCliId);
   if (!resolved) {
     const err = cliUnavailableError(requestedCliId);
@@ -170,18 +183,6 @@ async function runOne(params, ctx) {
     throw new BridgeError(
       "incomplete-checkout",
       `This needs a complete career-ops checkout (${required}). CAREER_OPS_ROOT has data only — point it at a full checkout.`,
-    );
-  }
-
-  // A MODE run: the agent follows the mode file in the checkout, and the
-  // prompt that says so is the client's (see bridge/mode-prompt.mjs and
-  // DECISIONS.md D-15). The mode file must be there, or the run is refused
-  // rather than sent an agent a mode it cannot read.
-  const modeRun = isModeKind(kind);
-  if (modeRun && !fs.existsSync(modeFile(kind))) {
-    throw new BridgeError(
-      "incomplete-checkout",
-      `This needs the ${MODE_KINDS[kind].file} mode file; this data root has no modes.`,
     );
   }
 

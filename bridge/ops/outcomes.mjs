@@ -80,8 +80,14 @@ export async function handle(params) {
     if (params.anonymity) args.push("--anonymity", String(params.anonymity));
     if (params.note) args.push("--story", String(params.note));
     const res = await runCoreScript("hired-share", args, { timeout: 60_000 });
+    if (res.code !== 0) {
+      throw new BridgeError(
+        "not-found",
+        res.output || "that application is not a hire, so there is nothing to share",
+      );
+    }
     return {
-      ok: res.code === 0,
+      ok: true,
       draft: res.output,
       // Nothing leaves this machine: the draft is text the user copies.
       submitted: false,
