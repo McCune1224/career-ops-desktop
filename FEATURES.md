@@ -75,12 +75,12 @@ The things that must be true before any other epic is usable.
 
 | ID | Capability | Evidence | Desktop | Acceptance | Size | Deps |
 |---|---|---|---|---|---|---|
-| E00-S01 | Check whether this install is ready and say exactly what is missing | `doctor.mjs`, `GET /api/doctor` | done | `desktop` shows missing prerequisites on the Today screen; `tests/desktop-bridge-ops.test.mjs` asserts the op decodes | S | |
-| E00-S02 | Read and validate `config/profile.yml` against the schema | `validate-profile.mjs` | partial | Invalid profile surfaces as an error the user can act on, not as an empty default | S | |
+| E00-S01 | Check whether this install is ready and say exactly what is missing | `doctor.mjs`, `GET /api/doctor` | done | `the bridge answers every read op in the shape the client decodes` | S |  |
+| E00-S02 | Read and validate `config/profile.yml` against the schema | `validate-profile.mjs` | done | `the profile validator surfaces a broken profile as an error` | S |  |
 | E00-S03 | Edit the candidate details in the profile, merge-safely | `POST /api/profile`, `web/src/lib/profile-patch.mjs` | done | `saving_the_profile_from_config_merges_rather_than_replaces` | S | E00-S02 |
 | E00-S04 | Configure the output language and market mode set | `profile-language.mjs`, `modes/<market>/`, `web/src/lib/profile-keywords.mjs` | missing | Choosing a market changes which evaluation mode the run reads | M | E03-S01 |
 | E00-S05 | Edit the personalization file (`modes/_profile.md`) without destroying its structure | `POST /api/personalization`, `web/src/lib/personalization-file.mjs` | missing | A section edit changes only that section; a file it cannot parse is refused, not rewritten | M | |
-| E00-S06 | Seed a first-run profile from the shipped example | `config/profile.example.yml` | done | First save on a fresh install seeds, and never overwrites an existing profile | S | |
+| E00-S06 | Seed a first-run profile from the shipped example | `config/profile.example.yml` | done | `a first save on a fresh install seeds the profile and never overwrites one` | S |  |
 | E00-S07 | Update the system layer without touching user data | `update-system.mjs`, `modes/update.md` | gap | Not wanted natively; the CLI owns it | S | |
 | E00-S08 | Detect the installed AI CLIs and pick a usable one | `web/src/lib/clis.ts`, `web/src/lib/cli-pick.mjs` | done | `loading_the_app_selects_a_usable_cli_without_a_visit_to_config` | S | |
 
@@ -88,16 +88,16 @@ The things that must be true before any other epic is usable.
 
 | ID | Capability | Evidence | Desktop | Acceptance | Size | Deps |
 |---|---|---|---|---|---|---|
-| E01-S01 | Read the tracker, header-alias aware | `tracker-parse.mjs`, `tracker-aliases.json`, `web/src/lib/tracker-table.mjs` | done | Rows parse from `data/applications.md` with the shared alias table; `pipeline_screen_renders_the_tracker_rows` | S | |
-| E01-S02 | List, sort and filter the tracker | `web/src/lib/core/pipeline-sort.mjs`, `web/src/components/pipeline-view.tsx` | done | Six sort keys, status tabs, score floor, free text; four click tests in `tests/screens.rs` | M | E01-S01 |
+| E01-S01 | Read the tracker, header-alias aware | `tracker-parse.mjs`, `tracker-aliases.json`, `web/src/lib/tracker-table.mjs` | done | `pipeline_screen_renders_the_tracker_rows` | S |  |
+| E01-S02 | List, sort and filter the tracker | `web/src/lib/core/pipeline-sort.mjs`, `web/src/components/pipeline-view.tsx` | done | `pipeline_filters_by_status_and_score`, `clicking_a_column_header_reorders_the_rows` | M | E01-S01 |
 | E01-S03 | Change a row's status to a canonical state | `set-status.mjs`, `POST /api/status` | done | `a status change lands through set-status.mjs and is attributed to desktop` | M | E01-S01 |
 | E01-S04 | Reject a status the canonical set does not contain, writing nothing | `templates/states.yml`, `set-status.mjs` | done | `a rejected state writes nothing` | S | E01-S03 |
-| E01-S05 | Bulk-change several rows at once | `web/src/components/pipeline-view.tsx` (selection + bulk apply) | missing | Selecting N rows and applying a state writes N ledger rows through `set-status.mjs` | M | E01-S03 |
-| E01-S06 | Show the pending-posting inbox | `data/pipeline.md`, `web/src/lib/pipeline-table.mjs` | done | Counts on Today and Pipeline match the file | S | |
-| E01-S07 | Skip or un-skip an inbox posting | `web/src/lib/inbox-skip.mjs`, `POST /api/inbox/skip` | partial | The bridge op works and is tested; no control on the screen yet | S | E01-S06 |
+| E01-S05 | Bulk-change several rows at once | `web/src/components/pipeline-view.tsx` (selection + bulk apply) | done | `a bulk status change writes one ledger row per row` | M | E01-S03 |
+| E01-S06 | Show the pending-posting inbox | `data/pipeline.md`, `web/src/lib/pipeline-table.mjs` | done | `today_screen_renders_the_daily_loop_tiles` | S |  |
+| E01-S07 | Skip or un-skip an inbox posting | `web/src/lib/inbox-skip.mjs`, `POST /api/inbox/skip` | done | `the_pipeline_screen_offers_a_skip_control_for_each_pending_posting` | S | E01-S06 |
 | E01-S08 | Shortlist inbox rows and score them in a batch | `web/src/components/inbox/inbox-triage.tsx`, `batch/` | missing | A shortlist can be saved, hidden, and scored with an explicit spend confirmation | L | E03-S01 |
-| E01-S09 | Delete a tracker row, with the orphaned-report consequence shown | `tracker.mjs delete`, `POST /api/tracker/delete` | missing | Deleting asks for confirmation, names the report it orphans, and goes through `tracker.mjs` | S | E01-S01 |
-| E01-S10 | Open a posting URL from the tracker | `web/src/lib/posting-url.mjs` | done | `pipeline_screen_offers_report_and_posting_actions` | S | |
+| E01-S09 | Delete a tracker row, with the orphaned-report consequence shown | `tracker.mjs delete`, `POST /api/tracker/delete` | done | `removing a tracker row goes through tracker.mjs and names the orphaned report` | S | E01-S01 |
+| E01-S10 | Open a posting URL from the tracker | `web/src/lib/posting-url.mjs` | done | `pipeline_screen_offers_report_and_posting_actions` | S |  |
 | E01-S11 | Add an application by hand | `modes/add.md`, `add-entry.mjs` | missing | A hand-added row appears in the tracker with a `N/A` score sentinel, never a blank cell | M | E01-S01 |
 | E01-S12 | Find a tracker row or report by free text | `find.mjs` | missing | Query returns ranked matches across the tracker and `reports/` | M | E01-S01 |
 
@@ -105,17 +105,17 @@ The things that must be true before any other epic is usable.
 
 | ID | Capability | Evidence | Desktop | Acceptance | Size | Deps |
 |---|---|---|---|---|---|---|
-| E02-S01 | Evaluate a posting into an A-F block report with a score and a verdict | `modes/oferta.md`, `modes/_shared.md`, `POST /api/run` kind `evaluate` | done | `tests/desktop-run-e2e.test.mjs` writes a report and a tracker row through the canonical scripts | L | E03-S01 |
-| E02-S02 | Persist the report and merge the tracker row, atomically | `persist-evaluation-report.mjs`, `merge-tracker.mjs`, `reserve-report-num.mjs` | done | The e2e test asserts the report file, the tracker row with score and link, and the released sentinel | M | E02-S01 |
+| E02-S01 | Evaluate a posting into an A-F block report with a score and a verdict | `modes/oferta.md`, `modes/_shared.md`, `POST /api/run` kind `evaluate` | done | `an evaluation started by the desktop client is persisted through the canonical scripts` | L | E03-S01 |
+| E02-S02 | Persist the report and merge the tracker row, atomically | `persist-evaluation-report.mjs`, `merge-tracker.mjs`, `reserve-report-num.mjs` | done | `an evaluation started by the desktop client is persisted through the canonical scripts` | M | E02-S01 |
 | E02-S03 | Read a report in the app, rendered | `web/src/components/report-view.tsx`, `web/src/lib/report-sections.mjs` | done | `report_screen_shows_the_report_and_the_source_posting` | M | E02-S02 |
-| E02-S04 | Show the verdict lead, score, and legitimacy tier | `web/src/lib/report-sections.mjs`, `web/src/lib/format.ts` | done | The screen shows score, status and legitimacy; the body renders | S | E02-S03 |
-| E02-S05 | Progressive disclosure: Block B open, the rest folded, machine artifacts separate | `web/src/components/report-view.tsx` | missing | Opening a report shows the lead and the verdict, with the rest one click away | S | E02-S03 |
+| E02-S04 | Show the verdict lead, score, and legitimacy tier | `web/src/lib/report-sections.mjs`, `web/src/lib/format.ts` | done | `report_screen_shows_the_report_and_the_source_posting` | S | E02-S03 |
+| E02-S05 | Progressive disclosure: Block B open, the rest folded, machine artifacts separate | `web/src/components/report-view.tsx` | done | `the_report_screen_opens_the_lead_and_folds_the_rest` | S | E02-S03 |
 | E02-S06 | Keyword coverage against the CV for one report | `keyword-match.mjs`, `GET /api/keyword-match` | missing | A panel shows present, thin and missing keywords, and never writes to the CV | M | E02-S03 |
 | E02-S07 | Score levers and score methodology | `web/src/components/score-levers.tsx`, `web/src/components/score-methodology.tsx` | missing | The panel explains what moved the score, from the report body only | M | E02-S03 |
 | E02-S08 | Company evidence card for a report | `company-history.mjs`, `GET /api/company-history` | missing | The card shows this company's history from tracker, follow-ups, scan history and the status log | M | E02-S03 |
 | E02-S09 | Compare two or three applications side by side | `web/src/app/pipeline/compare/page.tsx` | missing | Two columns show score, legitimacy and the union of summary fields | M | E02-S03 |
 | E02-S10 | Keep the JD archived with the report | `check-jd-archive.mjs`, `jds/`, `jd-capture.mjs` | partial | A report cannot be written without either an embedded JD section or a `jds/` capture; the client never strips it | M | E02-S02 |
-| E02-S11 | Attach a posting date rather than letting the agent guess it | `POST /api/run`, `readScanDates()` | done | A report written for a scanned URL carries the recorded `posted:` date or none | S | E02-S01 |
+| E02-S11 | Attach a posting date rather than letting the agent guess it | `POST /api/run`, `readScanDates()` | done | `a report for a scanned URL carries the recorded posting date` | S | E02-S01 |
 
 ## E03. Worker runs and CLI integration
 
@@ -124,24 +124,24 @@ uses this path unchanged, so most rows are about surfaces rather than plumbing.
 
 | ID | Capability | Evidence | Desktop | Acceptance | Size | Deps |
 |---|---|---|---|---|---|---|
-| E03-S01 | Spawn a chosen AI CLI headlessly, with argv fenced to the worker's capabilities | `web/src/lib/spawn-cli.mjs`, `web/src/lib/cli-fencing.mjs`, `web/src/lib/claude-invocation.mjs`, `web/src/lib/worker-capabilities.mjs` | done | `tests/desktop-engine-parity.test.mjs` asserts module identity and argv parity for all kinds | L | |
+| E03-S01 | Spawn a chosen AI CLI headlessly, with argv fenced to the worker's capabilities | `web/src/lib/spawn-cli.mjs`, `web/src/lib/cli-fencing.mjs`, `web/src/lib/claude-invocation.mjs`, `web/src/lib/worker-capabilities.mjs` | done | `the bridge's run path imports the same engine modules the web route does`, `the bridge builds the same argv as the web app for every CLI and kind` | L |  |
 | E03-S02 | Stream progress as text, tool, status, error and done | `web/src/lib/job-stream.mjs`, `POST /api/run` | done | `run_screen_renders_streamed_progress` | M | E03-S01 |
-| E03-S03 | Announce when a CLI cannot be permission-restricted | `web/src/lib/cli-fencing.mjs::fencingReport` | done | A run on `hermes` or `opencode2` says so before it starts | S | E03-S01 |
+| E03-S03 | Announce when a CLI cannot be permission-restricted | `web/src/lib/cli-fencing.mjs::fencingReport` | done | `a CLI that cannot be fenced says so, and is refused a write-capable worker` | S | E03-S01 |
 | E03-S04 | Say when a CLI has gone quiet, rather than looking hung | `app.rs::run_clock`, `src/views/run.rs` | done | `a_keepalive_does_not_count_as_the_agent_speaking`, `a_silent_run_says_so_instead_of_only_saying_running` | S | E03-S02 |
-| E03-S05 | Say when the chosen CLI was substituted for one that is not installed | `cli-pick.mjs::pickUsableCli`, `cliSubstitutionNotice()` | missing | The notice reaches the run log; picking an absent CLI does not fail silently | S | E00-S08 |
-| E03-S06 | Refuse a worker whose capability the CLI cannot be granted | `web/src/lib/cli-fencing.mjs::isCliAllowedForCapabilities` | done | `hermes` is refused for a write-capable worker, before spawning | S | E03-S01 |
-| E03-S07 | Estimate a run's cost from recent runs before spending it | `web/src/lib/run-cost-estimate.mjs`, `web/src/components/cost/cost-badge.tsx` | missing | A run screen shows a median token and dollar estimate with a fallback when there is no history | M | E03-S02 |
+| E03-S05 | Say when the chosen CLI was substituted for one that is not installed | `cli-pick.mjs::pickUsableCli`, `cliSubstitutionNotice()` | done | `a run on an absent CLI says it substituted one` | S | E00-S08 |
+| E03-S06 | Refuse a worker whose capability the CLI cannot be granted | `web/src/lib/cli-fencing.mjs::isCliAllowedForCapabilities` | done | `a CLI that cannot be fenced says so, and is refused a write-capable worker` | S | E03-S01 |
+| E03-S07 | Estimate a run's cost from recent runs before spending it | `web/src/lib/run-cost-estimate.mjs`, `web/src/components/cost/cost-badge.tsx` | done | `the cost estimate comes from this client's own runs` | M | E03-S02 |
 | E03-S08 | Confirm a batch spend before a fan-out | `web/src/lib/run-cost-estimate.mjs::requiresBatchSpendConfirmation` | missing | Scoring N postings asks first, and states the estimate | M | E03-S07 |
 | E03-S09 | Record token and cost per run, and aggregate usage | `web/src/lib/claude-usage.mjs`, `GET /api/usage`, `utils/token-tracker.mjs` | missing | The run log shows tokens and cost; a sensor shows the 5h and 7d windows | M | E03-S02 |
-| E03-S10 | Save a run log the CLI assistant can read later | `POST /api/runs/save`, `web/src/components/jobs/job-store.tsx` | missing | A finished run leaves a readable record; `/jobs` lists them | M | E03-S02 |
+| E03-S10 | Save a run log the CLI assistant can read later | `POST /api/runs/save`, `web/src/components/jobs/job-store.tsx` | done | `a finished run leaves a readable record the assistant can read` | M | E03-S02 |
 | E03-S11 | Repair a broken portal from the run screen | `POST /api/run` kind `fix-portal`, `modes/scan.md` | missing | The run refuses an unsafe company name and reports what it changed | M | E03-S01 |
 
 ## E04. CV
 
 | ID | Capability | Evidence | Desktop | Acceptance | Size | Deps |
 |---|---|---|---|---|---|---|
-| E04-S01 | Read and edit `cv.md` with a live preview | `GET/POST /api/cv`, `web/src/components/cv-editor.tsx` | done | `cv_screen_shows_the_cv_and_its_editor`, `the CV write is atomic and leaves a backup` | M | |
-| E04-S02 | Tailor the CV to one posting and render a PDF | `modes/pdf.md`, `build-cv-html.mjs`, `generate-pdf.mjs`, `web/src/lib/pdf-render.mjs` | done | The `pdf` run saves the CV and marks the tracker row `✅` only after a confirmed render | L | E03-S01 |
+| E04-S01 | Read and edit `cv.md` with a live preview | `GET/POST /api/cv`, `web/src/components/cv-editor.tsx` | done | `cv_screen_shows_the_cv_and_its_editor`, `the CV write is atomic and leaves a backup` | M |  |
+| E04-S02 | Tailor the CV to one posting and render a PDF | `modes/pdf.md`, `build-cv-html.mjs`, `generate-pdf.mjs`, `web/src/lib/pdf-render.mjs` | done | `the pdf run leaves the tracker PDF column alone when the render does not happen` | L | E03-S01 |
 | E04-S03 | Choose a CV template, including a named variant | `cv-templates.mjs`, `templates/`, `web/src/lib/core/cv-template.mjs` | missing | A profile setting selects the template the `pdf` run fills | M | E04-S02 |
 | E04-S04 | Import a CV from pasted text or a document, as a proposal | `POST /api/cv/ingest`, `modes/intake.md`, `intake.mjs` | missing | The import proposes; nothing is written until the user confirms | L | E04-S01 |
 | E04-S05 | Verify a tailored CV's claims against the source files | `verify-cv-facts.mjs` | missing | A claim with no source is named, and the CV is not reported as clean | L | E04-S02 |
@@ -158,7 +158,7 @@ uses this path unchanged, so most rows are about surfaces rather than plumbing.
 
 | ID | Capability | Evidence | Desktop | Acceptance | Size | Deps |
 |---|---|---|---|---|---|---|
-| E05-S01 | Draft a cover letter for one application, with a brief | `modes/cover.md`, `generate-cover-letter.mjs`, `POST /api/run` kind `cover` | done | The `cover` run produces a PDF and the report screen offers it | L | E03-S01 |
+| E05-S01 | Draft a cover letter for one application, with a brief | `modes/cover.md`, `generate-cover-letter.mjs`, `POST /api/run` kind `cover` | done | `the cover run produces a draft letter in the run log`, `report_screen_shows_the_report_and_the_source_posting` | L | E03-S01 |
 | E05-S02 | Choose the letter's tone from a fixed set | `web/src/lib/cover-tones.mjs`, `web/src/lib/cover-brief.mjs` | missing | The tone is one of the declared set and is visible in the draft | S | E05-S01 |
 | E05-S03 | Draft a formal application email, and never send it | `modes/email.md` | missing | A draft with subject, body, attachment checklist and contact block; no send path | M | E02-S03 |
 | E05-S04 | Find the right contact and draft outreach in the channel's limit | `modes/contacto.md`, `contact-extract.mjs`, `contact-lookup.mjs` | missing | The draft respects the connection-note limit and names the contact type | L | E02-S03 |
@@ -170,12 +170,12 @@ uses this path unchanged, so most rows are about surfaces rather than plumbing.
 
 | ID | Capability | Evidence | Desktop | Acceptance | Size | Deps |
 |---|---|---|---|---|---|---|
-| E06-S01 | Show what is due, from the core's cadence calculator | `followup-cadence.mjs`, `GET /api/followups` | done | `followups_screen_lists_due_followups_and_the_log` | M | |
-| E06-S02 | Log a follow-up, and remove a mis-logged one | `POST/DELETE /api/followups/log` | partial | The log write is tested; the delete op exists without a control | S | E06-S01 |
-| E06-S03 | Pin a next follow-up date, and clear the pin | `POST/DELETE /api/followups/override` | missing | A pin supersedes the computed cadence, and clearing it restores it | S | E06-S01 |
-| E06-S04 | Tune the cadence knobs, merge-safely | `POST /api/followups/cadence` | done | `the cadence read and write go through config/profile.yml` | S | |
-| E06-S05 | Turn follow-ups off entirely | `web/src/lib/followups-setting.mjs` | partial | The setting is honoured on screen; the nav entry does not hide | S | E06-S04 |
-| E06-S06 | Seed the first follow-up date when a row turns Applied | `followup-seed.mjs` | missing | A status change to Applied pins the first date from the cadence | S | E01-S03 |
+| E06-S01 | Show what is due, from the core's cadence calculator | `followup-cadence.mjs`, `GET /api/followups` | done | `followups_screen_lists_due_followups_and_the_log` | M |  |
+| E06-S02 | Log a follow-up, and remove a mis-logged one | `POST/DELETE /api/followups/log` | done | `the_follow_ups_screen_offers_a_remove_and_a_pin` | S | E06-S01 |
+| E06-S03 | Pin a next follow-up date, and clear the pin | `POST/DELETE /api/followups/override` | done | `the_follow_ups_screen_offers_a_remove_and_a_pin` | S | E06-S01 |
+| E06-S04 | Tune the cadence knobs, merge-safely | `POST /api/followups/cadence` | done | `the cadence read and write go through config/profile.yml` | S |  |
+| E06-S05 | Turn follow-ups off entirely | `web/src/lib/followups-setting.mjs` | done | `the_follow_ups_entry_is_hidden_when_follow_ups_are_off` | S | E06-S04 |
+| E06-S06 | Seed the first follow-up date when a row turns Applied | `followup-seed.mjs` | done | `a row that turned Applied pins its first follow-up` | S | E01-S03 |
 | E06-S07 | Flag companies still silent after an interview, as a suggestion | `rejection-latency.mjs`, `GET /api/quiet-companies` | missing | The list is read-only and offers a blacklist row to copy | M | E01-S01 |
 | E06-S08 | Measure per-company recruiting friction | `process-quality.mjs` | missing | Friction rate comes from the interview notes' tags | M | E06-S07 |
 | E06-S09 | Record an outcome and archive the artifacts | `outcome.mjs`, `modes/outcome.md` | missing | An outcome archives the JD and posting, and syncs the tracker | M | E01-S01 |
@@ -249,8 +249,8 @@ uses this path unchanged, so most rows are about surfaces rather than plumbing.
 
 | ID | Capability | Evidence | Desktop | Acceptance | Size | Deps |
 |---|---|---|---|---|---|---|
-| E12-S01 | Validate the pipeline's health end to end | `verify-pipeline.mjs` | missing | A single command reports every broken link, orphan and inconsistent row | M | E01-S01 |
-| E12-S02 | Normalise statuses to the canonical set | `normalize-statuses.mjs` | missing | Non-canonical values are rewritten with a backup, and the run is idempotent | S | E01-S03 |
+| E12-S01 | Validate the pipeline's health end to end | `verify-pipeline.mjs` | done | `the health check reports a broken report link` | M | E01-S01 |
+| E12-S02 | Normalise statuses to the canonical set | `normalize-statuses.mjs` | done | `normalizing rewrites a non-canonical status and is idempotent` | S | E01-S03 |
 | E12-S03 | Remove duplicate tracker rows | `dedup-tracker.mjs` | missing | A duplicate is merged by URL key before fuzzy matching, with a backup | M | E12-S01 |
 | E12-S04 | Repair tracker rows whose report link is dead | `fix-report-links.mjs` | missing | Only single-link cells are rewritten; others are listed for hand review | S | E12-S01 |
 | E12-S05 | Reconcile the tracker against the reports on disk | `reconcile-pipeline.mjs` | missing | Rows and reports that disagree are listed with the proposed repair | M | E12-S01 |
@@ -297,14 +297,14 @@ rows; the web UI has no equivalent.
 
 | ID | Capability | Evidence | Desktop | Acceptance | Size | Deps |
 |---|---|---|---|---|---|---|
-| E16-S01 | Run as one process tree with no listening socket | `bridge/server.mjs` | done | `the bridge never binds a socket` | S | |
-| E16-S02 | Survive a bridge crash without wedging | `src/bridge.rs` | done | Pending calls fail with `bridge-gone`; the window stays up | S | |
-| E16-S03 | Read the real data root, read-only, and prove it changed nothing | `tests/live_data.rs` | done | Digest before and after is identical | S | |
-| E16-S04 | Zoom and theme, persisted | `src/theme.rs`, `src/settings.rs` | done | `Ctrl +/-/0`, `A-/A+`, theme toggle, saved | S | |
-| E16-S05 | Open a PDF or a URL in the user's own viewer | `views/report.rs::open_file`, `views/pipeline.rs::open_url` | done | `xdg-open` is called with a scheme-checked URL or a resolved path | S | |
-| E16-S06 | Say which data root and checkout are in use | `views/config.rs::install_section` | done | `config_screen_reports_where_the_data_comes_from` | S | |
-| E16-S07 | Keyboard navigation across screens | none | missing | Tab order is sane and `Ctrl 1..6` reaches each screen; a `tests/screens.rs` test clicks and keys through them | S | |
-| E16-S08 | Remember the last screen across launches | none | missing | Reopening lands where you left off | S | E16-S04 |
+| E16-S01 | Run as one process tree with no listening socket | `bridge/server.mjs` | done | `the bridge never binds a socket` | S |  |
+| E16-S02 | Survive a bridge crash without wedging | `src/bridge.rs` | done | `a_bridge_that_dies_fails_the_pending_calls_with_bridge_gone` | S |  |
+| E16-S03 | Read the real data root, read-only, and prove it changed nothing | `tests/live_data.rs` | done | `the_live_data_root_decodes_and_is_left_untouched` | S |  |
+| E16-S04 | Zoom and theme, persisted | `src/theme.rs`, `src/settings.rs` | done | `the_zoom_and_the_theme_are_saved` | S |  |
+| E16-S05 | Open a PDF or a URL in the user's own viewer | `views/report.rs::open_file`, `views/pipeline.rs::open_url` | done | `pipeline_screen_offers_report_and_posting_actions` | S |  |
+| E16-S06 | Say which data root and checkout are in use | `views/config.rs::install_section` | done | `config_screen_reports_where_the_data_comes_from` | S |  |
+| E16-S07 | Keyboard navigation across screens | none | done | `ctrl_number_keys_reach_every_screen` | S |  |
+| E16-S08 | Remember the last screen across launches | none | done | `the_app_reopens_on_the_screen_it_was_left_on` | S | E16-S04 |
 | E16-S09 | Recover from a bridge that is missing or too old | `bridge.rs::discover` | partial | A missing bridge produces one actionable sentence, not a stack trace | S | |
 | E16-S10 | Report a version mismatch between app and engine | none | missing | The app says which side is behind and refuses to run a mismatched pair | S | E16-S09 |
 

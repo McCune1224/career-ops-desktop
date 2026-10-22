@@ -138,6 +138,15 @@ pub struct Report {
     pub title: Option<String>,
     pub legitimacy: Option<String>,
     pub fields: Vec<ReportField>,
+    /// The report's introduction, before its first block.
+    pub intro: String,
+    /// The one-line "why this score".
+    pub lead: String,
+    /// The report's VERDICT line, lifted out of the blocks so folding the
+    /// body never hides the answer.
+    pub verdict: Option<String>,
+    /// The report's blocks, split by the engine's own splitter.
+    pub sections: Vec<ReportSection>,
     pub posting_url: Option<String>,
     pub tracker_url: Option<String>,
     pub cv_pdf: Option<String>,
@@ -149,6 +158,19 @@ pub struct Report {
 pub struct ReportField {
     pub label: String,
     pub value: String,
+}
+
+/// One block of a report, as the engine's splitter produced it.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ReportSection {
+    pub heading: String,
+    pub letter: Option<String>,
+    pub content: String,
+    /// The one-line summary shown while the block is folded.
+    pub preview: String,
+    /// True for the block that carries the CV match.
+    pub lead: bool,
 }
 
 /// A follow-up, as the core's cadence calculator reports it.
@@ -249,6 +271,325 @@ pub struct StatusResult {
     pub status: String,
     pub changed: bool,
     pub status_logged: bool,
+}
+
+/// One row's outcome in a bulk status change.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct BulkRow {
+    pub n: String,
+    pub ok: bool,
+    pub status: String,
+    pub changed: bool,
+    pub status_logged: bool,
+    pub error: Option<String>,
+    pub code: Option<String>,
+}
+
+/// A bulk status change: one writer call per row, one outcome per row.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct BulkStatus {
+    pub status: String,
+    pub applied: usize,
+    pub failed: usize,
+    pub ledger_rows: usize,
+    pub results: Vec<BulkRow>,
+}
+
+/// A tracker row that was removed, or proposed for removal.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct TrackerDelete {
+    pub ok: bool,
+    pub n: String,
+    /// The report the removal orphans, when the row had one.
+    pub orphaned_report: Option<String>,
+    pub output: String,
+    pub dry_run: bool,
+}
+
+/// A row the user added by hand.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct TrackerAdd {
+    pub ok: bool,
+    pub num: Option<i64>,
+    pub company: String,
+    pub role: String,
+    pub status: String,
+    pub score: String,
+}
+
+/// One finding from the profile validator.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ProfileFinding {
+    pub level: String,
+    pub code: String,
+    pub key: Option<String>,
+    pub message: String,
+    pub suggestion: Option<String>,
+}
+
+/// What the core's profile validator found.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ProfileValidation {
+    pub ok: bool,
+    pub exit_code: i64,
+    pub findings: Vec<ProfileFinding>,
+    pub errors: Vec<ProfileFinding>,
+    pub warnings: Vec<ProfileFinding>,
+    pub message: String,
+}
+
+/// One maintenance tool's outcome.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Maintenance {
+    pub tool: String,
+    pub apply: bool,
+    pub ok: bool,
+    pub exit_code: i64,
+    /// The script's own words. The client adds no rule of its own.
+    pub output: String,
+    /// The script's JSON, when it has any.
+    pub data: Option<serde_json::Value>,
+}
+
+/// The estimate for one run of a kind.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct CostEstimate {
+    pub kind: String,
+    pub count: usize,
+    pub tokens: Option<f64>,
+    pub usd: Option<f64>,
+    pub samples: usize,
+    pub text: String,
+    pub requires_confirmation: bool,
+    pub confirmation: Option<String>,
+}
+
+/// One spend window: the client's own runs inside it.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct UsageWindow {
+    pub name: String,
+    pub hours: i64,
+    pub runs: usize,
+    pub tokens: f64,
+    pub usd: f64,
+}
+
+/// The client's own spend, in windows.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Usage {
+    pub windows: Vec<UsageWindow>,
+    pub computed_at: f64,
+    pub runs: usize,
+}
+
+/// A run this client recorded.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct RunRecord {
+    pub id: String,
+    pub kind: String,
+    pub title: String,
+    pub status: String,
+    pub tokens: f64,
+    pub usd: f64,
+    pub started_at: f64,
+}
+
+/// What the follow-up seeder did.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct FollowupSeed {
+    pub ok: bool,
+    pub seeded: bool,
+    pub app_num: Option<i64>,
+    pub next_date: Option<String>,
+    pub pin: Option<String>,
+    pub reason: Option<String>,
+}
+
+/// A document the client generated.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Document {
+    pub filename: String,
+    pub kind: String,
+    pub date: Option<String>,
+    pub report_id: Option<String>,
+    pub format: Option<String>,
+    pub id: String,
+}
+
+/// A posting's liveness verdict.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Liveness {
+    pub ok: bool,
+    pub verdict: String,
+    pub output: String,
+}
+
+/// A match found by the free-text search.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct SearchMatch {
+    pub tracker_num: String,
+    pub company: String,
+    pub role: String,
+    pub score: String,
+    pub status: String,
+    pub report_num: Option<String>,
+}
+
+/// The result of a free-text search across the tracker.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct SearchResults {
+    pub query: String,
+    pub found: usize,
+    pub matches: Vec<SearchMatch>,
+}
+
+/// One company of the watched boards.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Portal {
+    pub name: String,
+    pub provider: String,
+    pub careers_url: String,
+    pub verdict: String,
+    pub count: Option<i64>,
+    pub detail: Option<String>,
+    pub samples: Vec<String>,
+}
+
+/// One posting the scan history knows and the user has not evaluated.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Offer {
+    pub url: String,
+    pub company: String,
+    pub title: String,
+    pub location: String,
+    pub posted_at: String,
+    pub ats: String,
+}
+
+/// What is new this week.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct WhatsNew {
+    pub available: bool,
+    pub count: usize,
+    pub days: i64,
+    pub offers: Vec<Offer>,
+}
+
+/// A story in the bank, with its provenance verdict.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct StoryProvenance {
+    pub story: String,
+    pub claim: String,
+    pub pattern: Option<String>,
+    pub reason: Option<String>,
+}
+
+/// The provenance of every claim in the story bank.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct StoryBank {
+    pub available: bool,
+    pub exists: bool,
+    pub text: String,
+    pub existing: Vec<StoryProvenance>,
+    pub supported_by_resume: Vec<StoryProvenance>,
+    pub derived_unverified: Vec<StoryProvenance>,
+    pub user_cannot_confirm: Vec<StoryProvenance>,
+}
+
+/// A contact in the phonebook.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Contact {
+    pub name: String,
+    pub company: String,
+    pub r#type: String,
+    pub title: String,
+    pub phone: String,
+    pub email: String,
+    pub linkedin: String,
+    pub notes: String,
+}
+
+/// The phonebook.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Contacts {
+    pub available: bool,
+    pub total: usize,
+    pub contacts: Vec<Contact>,
+}
+
+/// One candidate an invite could match.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct InviteCandidate {
+    pub app_number: Option<i64>,
+    pub company: String,
+    pub role: String,
+    pub status: String,
+    pub match_confidence: Option<String>,
+}
+
+/// What the invite matcher found.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct InviteMatch {
+    pub available: bool,
+    pub classification: Option<String>,
+    pub candidates: Vec<InviteCandidate>,
+    pub output: String,
+}
+
+/// A plugin the core can load.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Plugin {
+    pub id: String,
+    pub name: String,
+    pub enabled: bool,
+    pub hooks: Vec<String>,
+    pub missing_env: Vec<String>,
+}
+
+/// What is running: the client, the bridge protocol and the engine release.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Version {
+    /// The bridge protocol version.
+    pub protocol: i64,
+    /// The career-ops release the engine checkout carries.
+    pub engine: String,
+    /// The node runtime the bridge runs on.
+    pub node: String,
+}
+
+/// One analysis result, as the screen shows it.
+#[derive(Debug, Clone, Default)]
+pub struct Analysis {
+    pub action: String,
+    pub title: String,
+    pub body: String,
 }
 
 /// One event of a running job, in the web app's NDJSON shape.

@@ -78,6 +78,7 @@ pub fn ui(ui: &mut egui::Ui, app: &mut CareerOpsApp) {
                 );
             }
             for item in &followups.history {
+                let num = item.num.map(|n| n.to_string());
                 theme::card(ui, t)
                     .inner_margin(Margin::symmetric(14, 9))
                     .show(ui, |ui| {
@@ -100,6 +101,11 @@ pub fn ui(ui: &mut egui::Ui, app: &mut CareerOpsApp) {
                             pill(ui, &item.channel, t.accent);
                             if !item.notes.is_empty() {
                                 ui.label(RichText::new(&item.notes).color(t.fg_muted));
+                            }
+                            if let Some(num) = &num {
+                                if ghost_button(ui, "Remove").clicked() {
+                                    app.delete_followup(num);
+                                }
                             }
                         });
                     });
@@ -148,6 +154,16 @@ fn entry_row(ui: &mut egui::Ui, app: &mut CareerOpsApp, entry: &FollowupEntry, t
                     ui.label(RichText::new(&entry.role).color(t.fg_muted));
                 }
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    if ghost_button(ui, "Pin the next date").clicked() {
+                        app.followup_view.pinning_for = Some(entry.num.to_string());
+                        app.followup_view.pin_date = entry
+                            .next_followup_date
+                            .clone()
+                            .unwrap_or_else(|| String::from("2026-01-01"));
+                    }
+                    if ghost_button(ui, "Seed the first follow-up").clicked() {
+                        app.seed_followup(&entry.num.to_string());
+                    }
                     if ghost_button(ui, "Log a follow-up").clicked() {
                         app.followup_view.logging_for = Some(entry.num.to_string());
                         app.followup_view.log_channel = "Email".to_string();
@@ -184,6 +200,46 @@ fn entry_row(ui: &mut egui::Ui, app: &mut CareerOpsApp, entry: &FollowupEntry, t
     if app.followup_view.logging_for.as_deref() == Some(target.as_str()) {
         log_dialog(ui, app, entry, t);
     }
+    if app.followup_view.pinning_for.as_deref() == Some(target.as_str()) {
+        pin_dialog(ui, app, entry, t);
+    }
+}
+
+/// The dialog that pins (or clears) the next follow-up date.
+fn pin_dialog(ui: &mut egui::Ui, app: &mut CareerOpsApp, entry: &FollowupEntry, t: Palette) {
+    theme::hero_card(ui, t).show(ui, |ui| {
+        ui.label(
+            RichText::new(format!(
+                "Next follow-up for #{} — {}",
+                entry.num, entry.company
+            ))
+            .strong()
+            .color(t.fg),
+        );
+        ui.add_space(6.0);
+        ui.horizontal(|ui| {
+            ui.label(
+                RichText::new("Date (YYYY-MM-DD)")
+                    .text_style(theme::meta())
+                    .color(t.fg_muted),
+            );
+            ui.add(
+                egui::TextEdit::singleline(&mut app.followup_view.pin_date)
+                    .desired_width(140.0),
+            );
+            if primary_button(ui, "Pin", true).clicked() {
+                let date = app.followup_view.pin_date.trim().to_string();
+                app.pin_followup(&entry.num.to_string(), &date);
+            }
+            if ghost_button(ui, "Clear the pin").clicked() {
+                app.unpin_followup(&entry.num.to_string());
+            }
+            if ghost_button(ui, "Cancel").clicked() {
+                app.followup_view.pinning_for = None;
+            }
+        });
+    });
+    ui.add_space(6.0);
 }
 
 /// The dialog that appends a row to data/follow-ups.md.

@@ -20,6 +20,13 @@ use serde_json::{json, Value};
 use crate::code_root;
 use crate::model::RunEvent;
 
+/// The bridge protocol this build speaks.
+///
+/// The bridge carries the same number (bridge/ops/version.mjs) and refuses to
+/// be used with a different one: an app talking to a bridge it does not
+/// understand would show a screen that is wrong in ways nobody can see.
+pub const PROTOCOL_VERSION: i64 = 1;
+
 /// A failure the bridge reported, or the bridge could not be reached.
 #[derive(Debug, Clone)]
 pub struct BridgeError {

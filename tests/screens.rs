@@ -147,7 +147,33 @@ fn report() -> serde_json::Value {
         "trackerUrl": null,
         "cvPdf": "/fixture/output/cv-alex-dragos-002.pdf",
         "cvHtml": null,
-        "coverPdf": null
+        "coverPdf": null,
+        "intro": "The evaluation, in full.",
+        "lead": "A strong match for the IT background.",
+        "verdict": "VERDICT: 4.6/5 — strong fit",
+        "sections": [
+            {
+                "heading": "Block A — Role fit",
+                "letter": "A",
+                "content": "A strong **match** for the `IT` background.",
+                "preview": "A strong match for the IT background.",
+                "lead": false
+            },
+            {
+                "heading": "Block B — CV match",
+                "letter": "B",
+                "content": "The CV covers every requirement the posting names.",
+                "preview": "The CV covers every requirement.",
+                "lead": true
+            },
+            {
+                "heading": "Block C — Gaps",
+                "letter": "C",
+                "content": "Two requirements the CV does not show.",
+                "preview": "Two requirements the CV does not show.",
+                "lead": false
+            }
+        ]
     })
 }
 
@@ -599,6 +625,15 @@ impl career_ops_desktop::Backend for FailingBackend {
         Ok(1)
     }
 
+    fn start_batch(
+        &self,
+        _kind: &str,
+        _inputs: &[String],
+        _cli_id: &str,
+    ) -> Result<u64, career_ops_desktop::bridge::BridgeError> {
+        Ok(1)
+    }
+
     fn poll_events(&self) -> Vec<career_ops_desktop::bridge::StreamEvent> {
         Vec::new()
     }
@@ -783,9 +818,21 @@ fn typing_in_the_search_box_filters_as_you_type() {
 
     // A text field only receives typed text when it holds focus, so the click
     // that focuses it is part of the interaction, not a test workaround.
-    harness.get_by_role(egui::Role::TextInput).click();
+    //
+    // The screen has more than one text field now — the filter's search box
+    // and the free-text find box — so the search box is picked by position:
+    // the filter bar is drawn first.
+    {
+        let mut inputs = harness.query_all_by_role(egui::Role::TextInput);
+        let field = inputs.next().expect("the pipeline screen has a search box");
+        field.click();
+    }
     harness.run();
-    harness.get_by_role(egui::Role::TextInput).type_text("dragos");
+    {
+        let mut inputs = harness.query_all_by_role(egui::Role::TextInput);
+        let field = inputs.next().expect("the pipeline screen has a search box");
+        field.type_text("dragos");
+    }
     harness.run();
 
     assert_eq!(harness.state().pipeline_view.search, "dragos");
@@ -1069,4 +1116,332 @@ fn config_shows_the_installed_clis_first_and_folds_the_rest_away() {
         harness.query_by_label("Codex").is_some(),
         "the folded group did not open"
     );
+}
+
+// ─── M1: the trustworthy daily loop ────────────────────────────────────────
+
+#[test]
+fn the_pipeline_screen_offers_a_skip_control_for_each_pending_posting() {
+    let app = app_with(&all_fixtures());
+    let harness = harness_for(app, |ui, app| views::pipeline::ui(ui, app));
+
+    assert!(
+        shows(&harness, "Skip"),
+        "the pending postings must offer a skip control"
+    );
+    assert!(
+        shows(&harness, "Contoso"),
+        "the pending posting must be shown"
+    );
+    assert!(
+        shows(&harness, "Shortlist"),
+        "the pending posting must offer a shortlist control"
+    );
+}
+
+#[test]
+fn the_pipeline_screen_offers_a_bulk_change_and_a_delete() {
+    let app = app_with(&all_fixtures());
+    let mut harness = harness_for(app, |ui, app| views::pipeline::ui(ui, app));
+
+    // The bulk bar appears once a row is picked.
+    assert!(
+        !shows(&harness, "row(s) picked"),
+        "nothing is picked yet, so there is no bulk bar"
+    );
+    // The per-row delete control is always there.
+    assert!(
+        shows(&harness, "Delete"),
+        "each row must offer a removal control"
+    );
+}
+
+#[test]
+fn the_report_screen_opens_the_lead_and_folds_the_rest() {
+    let mut app = app_with(&all_fixtures());
+    app.screen = Screen::Report("2".into());
+    app.state.report =
+        Some(serde_json::from_value(report()).expect("report fixture decodes"));
+    let harness = harness_for(app, |ui, app| views::report::ui(ui, app));
+
+    // The lead is OPEN: its content is on the screen.
+    assert!(
+        shows(&harness, "The CV covers every requirement"),
+        "the lead block must be open"
+    );
+    // The other blocks are FOLDED: their headings are there, their bodies are
+    // not.
+    assert!(
+        shows(&harness, "Block C"),
+        "the other blocks must still be listed"
+    );
+    assert!(
+        !shows(&harness, "Two requirements the CV does not show"),
+        "a folded block must not show its body"
+    );
+}
+
+#[test]
+fn ctrl_number_keys_reach_every_screen() {
+    use career_ops_desktop::shell::NAV;
+    assert!(
+        NAV.len() <= 10,
+        "there are more screens than the Ctrl 1..9 and Ctrl 0 shortcuts cover"
+    );
+    for (index, (label, screen)) in NAV.iter().enumerate() {
+        let mut app = app_with(&all_fixtures());
+        // The key the user presses for this screen: 1..9, then 0.
+        let key = match index {
+            0 => egui::Key::Num1,
+            1 => egui::Key::Num2,
+            2 => egui::Key::Num3,
+            3 => egui::Key::Num4,
+            4 => egui::Key::Num5,
+            5 => egui::Key::Num6,
+            6 => egui::Key::Num7,
+            7 => egui::Key::Num8,
+            8 => egui::Key::Num9,
+            _ => egui::Key::Num0,
+        };
+        // The shortcut is read from the frame's input, so the test presses the
+        // key in a real frame and lets the screen draw.
+        let mut harness = harness_for(app, |ui, app| {
+            app.handle_screen_shortcuts(ui.ctx());
+            views::pipeline::ui(ui, app);
+        });
+        harness.key_press_modifiers(egui::Modifiers::COMMAND, key);
+        harness.run();
+        assert_eq!(
+            harness.state().screen, *screen,
+            "Ctrl + {index} must reach {label}"
+        );
+    }
+}
+
+#[test]
+fn the_app_reopens_on_the_screen_it_was_left_on() {
+    let mut app = app_with(&all_fixtures());
+    app.go(Screen::Portals);
+    assert_eq!(app.settings.last_screen, "portals");
+
+    let mut reopened = app_with(&all_fixtures());
+    reopened.settings.last_screen = "portals".to_string();
+    reopened.go(Screen::from_id(&reopened.settings.last_screen));
+    assert_eq!(reopened.screen, Screen::Portals);
+
+    // A saved id that names no screen opens Today rather than a blank window.
+    let mut stale = app_with(&all_fixtures());
+    stale.go(Screen::from_id("a-screen-that-no-longer-exists"));
+    assert_eq!(stale.screen, Screen::Today);
+}
+
+#[test]
+fn the_follow_ups_entry_is_hidden_when_follow_ups_are_off() {
+    let mut answers = all_fixtures();
+    let mut boot = bootstrap();
+    boot["followupsEnabled"] = serde_json::json!(false);
+    answers.retain(|(op, _)| *op != "bootstrap");
+    answers.push(("bootstrap", boot));
+
+    let app = app_with(&answers);
+    let entries = career_ops_desktop::shell::nav_entries(&app);
+    assert!(
+        !entries.iter().any(|(label, _)| *label == "Follow-ups"),
+        "a nav entry for a feature that is off is a dead control"
+    );
+
+    let mut answers_on = all_fixtures();
+    let app_on = app_with(&answers_on);
+    let entries_on = career_ops_desktop::shell::nav_entries(&app_on);
+    assert!(
+        entries_on.iter().any(|(label, _)| *label == "Follow-ups"),
+        "the entry must be there when follow-ups are on"
+    );
+}
+
+#[test]
+fn a_missing_saved_cli_is_replaced_and_the_swap_is_said() {
+    let mut app = app_with(&all_fixtures());
+    app.settings.cli_id = "codex".to_string();
+    let replaced = app.resolve_cli();
+    assert!(replaced, "the absent CLI must be replaced");
+    assert_eq!(app.settings.cli_id, "claude");
+    let message = app.state.message.clone().expect("the swap must be said");
+    assert!(
+        message.0.contains("codex") && message.0.contains("Claude Code"),
+        "the message must name both CLIs: {}",
+        message.0
+    );
+}
+
+#[test]
+fn the_config_screen_shows_what_the_profile_validator_found() {
+    let mut answers = all_fixtures();
+    answers.retain(|(op, _)| *op != "config");
+    answers.push((
+        "config",
+        serde_json::json!({
+            "profile": { "candidate": { "full_name": "Alex McCune" } },
+            "exists": true,
+            "malformed": false,
+            "clis": [],
+            "states": ["Evaluated"],
+            "codeRoot": "/fixture",
+            "dataRoot": "/fixture"
+        }),
+    ));
+    let mut app = app_with(&answers);
+    app.state.profile_validation = Some(career_ops_desktop::model::ProfileValidation {
+        ok: false,
+        exit_code: 2,
+        findings: vec![],
+        errors: vec![career_ops_desktop::model::ProfileFinding {
+            level: "error".into(),
+            code: "not-a-mapping".into(),
+            key: None,
+            message: "config/profile.yml must contain named settings".into(),
+            suggestion: Some("fix the YAML".into()),
+        }],
+        warnings: vec![],
+        message: "config/profile.yml must contain named settings".into(),
+    });
+    let harness = harness_for(app, |ui, app| views::config::ui(ui, app));
+
+    assert!(
+        shows(&harness, "Profile check"),
+        "the config screen must offer the profile check"
+    );
+    assert!(
+        shows(&harness, "config/profile.yml must contain named settings"),
+        "the finding must reach the screen"
+    );
+    assert!(
+        shows(&harness, "Health check"),
+        "the config screen must offer the health check"
+    );
+}
+
+#[test]
+fn the_follow_ups_screen_offers_a_remove_and_a_pin() {
+    let app = app_with(&all_fixtures());
+    let harness = harness_for(app, |ui, app| views::followups::ui(ui, app));
+
+    assert!(
+        shows(&harness, "Remove"),
+        "a logged follow-up must offer a removal control"
+    );
+    assert!(
+        shows(&harness, "Pin the next date"),
+        "a follow-up must offer a pin control"
+    );
+    assert!(
+        shows(&harness, "Seed the first follow-up"),
+        "a follow-up must offer the first-date seed"
+    );
+}
+
+#[test]
+fn the_run_screen_offers_every_kind_and_its_cost() {
+    let app = app_with(&all_fixtures());
+    let harness = harness_for(app, |ui, app| views::run::ui(ui, app));
+
+    assert!(shows(&harness, "Evaluate a posting"));
+    assert!(shows(&harness, "Tailor the CV (PDF)"));
+    assert!(shows(&harness, "Draft a cover letter"));
+    assert!(shows(&harness, "Draft an application email"));
+    assert!(shows(&harness, "Build an interview prep pack"));
+    assert!(shows(&harness, "Practise interview questions"));
+    assert!(shows(&harness, "Debrief a real interview"));
+    assert!(shows(&harness, "Judge whether a company is safe"));
+    assert!(shows(&harness, "Walk an offer's clauses"));
+    assert!(shows(&harness, "Repair a broken portal"));
+}
+
+#[test]
+fn a_run_is_refused_when_the_app_and_the_bridge_disagree() {
+    let mut app = app_with(&all_fixtures());
+    app.state.version = Some(career_ops_desktop::model::Version {
+        protocol: career_ops_desktop::bridge::PROTOCOL_VERSION + 1,
+        engine: "9.9.9".into(),
+        node: "v22.0.0".into(),
+    });
+    app.settings.cli_id = "claude".into();
+    app.run.kind = Some(career_ops_desktop::app::RunKind::Evaluate);
+    app.run.input = "https://example.com/job/1".into();
+    assert!(
+        !app.run_ready(),
+        "a mismatched pair must not start a run"
+    );
+
+    app.state.version = Some(career_ops_desktop::model::Version {
+        protocol: career_ops_desktop::bridge::PROTOCOL_VERSION,
+        engine: "9.9.9".into(),
+        node: "v22.0.0".into(),
+    });
+    assert!(
+        app.run_ready(),
+        "a matching pair must start a run"
+    );
+}
+
+#[test]
+fn the_zoom_and_the_theme_are_saved() {
+    // A temporary config directory, so the test never touches the real one.
+    let dir = std::env::temp_dir().join(format!("career-ops-settings-{}", std::process::id()));
+    let previous = std::env::var("XDG_CONFIG_HOME").ok();
+    std::env::set_var("XDG_CONFIG_HOME", &dir);
+
+    let mut app = app_with(&all_fixtures());
+    let ctx = egui::Context::default();
+    app.zoom_by(&ctx, 1);
+    assert!(
+        app.settings.zoom > 1.15,
+        "Ctrl + must make things bigger, not smaller"
+    );
+    app.settings.theme = career_ops_desktop::settings::Theme::Light;
+    let _ = app.settings.save();
+
+    let reloaded = career_ops_desktop::settings::Settings::load();
+    assert_eq!(reloaded.zoom, app.settings.zoom, "the zoom must survive a restart");
+    assert_eq!(
+        reloaded.theme,
+        career_ops_desktop::settings::Theme::Light,
+        "the theme must survive a restart"
+    );
+
+    match previous {
+        Some(value) => std::env::set_var("XDG_CONFIG_HOME", value),
+        None => std::env::remove_var("XDG_CONFIG_HOME"),
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn a_bridge_that_dies_fails_the_pending_calls_with_bridge_gone() {
+    use career_ops_desktop::bridge::{Bridge, BridgePaths};
+
+    // A server that exits at once: the bridge is gone before it answers.
+    let dir = std::env::temp_dir().join(format!("career-ops-dead-bridge-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("the temp dir must be creatable");
+    let server = dir.join("server.mjs");
+    std::fs::write(&server, "process.exit(0);\n").expect("the stub must be writable");
+
+    let paths = BridgePaths {
+        client_root: dir.clone(),
+        code_root: dir.clone(),
+        server,
+        node: "node".to_string(),
+    };
+    let bridge = Bridge::start(paths, None).expect("the process must start");
+    let outcome = bridge.call("bootstrap", serde_json::json!({}));
+    assert!(outcome.is_err(), "a call to a dead bridge must fail");
+    let error = outcome.expect_err("the call must fail");
+    assert_eq!(error.code, "bridge-gone");
+    assert!(
+        error.message.contains("stopped running"),
+        "the message must say the bridge stopped: {}",
+        error.message
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
 }

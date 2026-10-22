@@ -21,12 +21,19 @@ use crate::settings::{Settings, Theme};
 use crate::theme::{self, Palette};
 
 /// The screens in the sidebar, in the order the web app lists them.
+///
+/// Ten entries, so Ctrl 1..9 and Ctrl 0 reach every one of them: a screen the
+/// keyboard cannot reach is a screen the keyboard test cannot prove.
 pub const NAV: &[(&str, Screen)] = &[
     ("Today", Screen::Today),
     ("Pipeline", Screen::Pipeline),
     ("Run", Screen::Run),
     ("CV", Screen::Cv),
     ("Follow-ups", Screen::Followups),
+    ("Documents", Screen::Documents),
+    ("Portals", Screen::Portals),
+    ("Interview", Screen::Interview),
+    ("Outcomes", Screen::Outcomes),
     ("Config", Screen::Config),
 ];
 
@@ -92,6 +99,10 @@ pub fn run() -> eframe::Result<()> {
         Box::new(move |cc| {
             let mut app = CareerOpsApp::new(backend.clone(), settings.clone());
             theme::apply(&cc.egui_ctx, settings.theme.clone(), settings.zoom);
+            // Reopen where the user left off. A saved id that names no screen
+            // opens Today, so a stale setting is never a blank window.
+            let screen = Screen::from_id(&settings.last_screen);
+            app.go(screen);
             app.load_all();
             Ok(Box::new(app))
         }),
@@ -105,6 +116,8 @@ impl eframe::App for CareerOpsApp {
         // Ctrl +/-/0 and Ctrl+Shift+Z for zoom, the shortcuts every desktop app
         // that can be too small has.
         self.handle_zoom_input(&ctx);
+        // Ctrl 1..9 and Ctrl 0 reach every screen.
+        self.handle_screen_shortcuts(&ctx);
 
         // Drain the run's streamed events before drawing, so the log shows the
         // newest line in the same frame it arrives.
@@ -155,6 +168,10 @@ impl CareerOpsApp {
             Screen::Run => crate::views::run::ui(ui, self),
             Screen::Cv => crate::views::cv::ui(ui, self),
             Screen::Followups => crate::views::followups::ui(ui, self),
+            Screen::Documents => crate::views::documents::ui(ui, self),
+            Screen::Portals => crate::views::portals::ui(ui, self),
+            Screen::Interview => crate::views::interview::ui(ui, self),
+            Screen::Outcomes => crate::views::outcomes::ui(ui, self),
             Screen::Config => crate::views::config::ui(ui, self),
         }
     }
@@ -242,18 +259,23 @@ fn sidebar(ui: &mut egui::Ui, app: &mut CareerOpsApp, t: Palette) {
     ui.add_space(6.0);
 
     let mut goto: Option<Screen> = None;
-    for (label, screen) in NAV {
+    for (label, screen) in nav_entries(app) {
         let selected = matches!(
-            (screen, &app.screen),
+            (&screen, &app.screen),
             (Screen::Today, Screen::Today)
                 | (Screen::Pipeline, Screen::Pipeline)
                 | (Screen::Run, Screen::Run)
                 | (Screen::Cv, Screen::Cv)
                 | (Screen::Followups, Screen::Followups)
+                | (Screen::Documents, Screen::Documents)
+                | (Screen::Portals, Screen::Portals)
+                | (Screen::Interview, Screen::Interview)
+                | (Screen::Outcomes, Screen::Outcomes)
                 | (Screen::Config, Screen::Config)
         );
         // A report is a view of one pipeline row, so Pipeline stays lit.
-        let selected = selected || matches!((screen, &app.screen), (Screen::Pipeline, Screen::Report(_)));
+        let selected =
+            selected || matches!((&screen, &app.screen), (Screen::Pipeline, Screen::Report(_)));
         if nav_item(ui, label, selected, t) {
             goto = Some(screen.clone());
         }
@@ -308,6 +330,23 @@ fn sidebar(ui: &mut egui::Ui, app: &mut CareerOpsApp, t: Palette) {
                 .color(t.fg_muted),
         );
     });
+}
+
+/// The navigation entries, in order, with the ones that do not apply removed.
+///
+/// Follow-ups can be turned off in the profile, and a nav entry for a feature
+/// that is off is a dead control: the entry goes with the feature.
+pub fn nav_entries(app: &CareerOpsApp) -> Vec<(&'static str, Screen)> {
+    let followups_on = app
+        .state
+        .bootstrap
+        .as_ref()
+        .map(|b| b.followups_enabled)
+        .unwrap_or(true);
+    NAV.iter()
+        .filter(|(label, _)| !(*label == "Follow-ups" && !followups_on))
+        .map(|(label, screen)| (*label, screen.clone()))
+        .collect()
 }
 
 /// One navigation row: a card that lights up, with an accent bar when selected.

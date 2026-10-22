@@ -41,6 +41,15 @@ pub struct Settings {
     pub zoom: f32,
     /// The data root to use, when it is not the checkout's own.
     pub data_root: String,
+    /// The postings shortlisted for a batch scoring run.
+    ///
+    /// The client's own list, so it survives a restart: a shortlist you cannot
+    /// come back to is a shortlist you have to rebuild.
+    pub shortlist: Vec<String>,
+    /// The screen the app was on when it was last closed.
+    ///
+    /// Reopening lands where you left off, which is the whole of E16-S08.
+    pub last_screen: String,
     /// The career-ops checkout this client drives.
     ///
     /// The engine lives in its own repository, so the checkout is a choice the
@@ -58,6 +67,8 @@ impl Default for Settings {
             zoom: DEFAULT_ZOOM,
             data_root: String::new(),
             code_root: String::new(),
+            last_screen: String::new(),
+            shortlist: Vec::new(),
         }
     }
 }

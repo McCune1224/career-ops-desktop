@@ -84,6 +84,41 @@ import { resolveTailoredCover } from "@/lib/apply/cover";
 import { profilePatchError } from "@/lib/profile-patch.mjs";
 import { isMapping } from "@/lib/portals-config.mjs";
 import { parseReport, CANONICAL_STATES, scoreNum, scoreTone, legitimacyTone } from "@/lib/format";
+import {
+  estimateRunCost,
+  formatTokenCount,
+  formatRunCostEstimate,
+  requiresBatchSpendConfirmation,
+  formatBatchSpendConfirmation,
+} from "@/lib/run-cost-estimate.mjs";
+import { claudeUsageTokens } from "@/lib/claude-usage.mjs";
+import { readMachineSummary, scoreLevers } from "@/lib/machine-summary.mjs";
+import { splitTiers, coverageModel, coverageBand } from "@/lib/keyword-coverage.mjs";
+import { skillGapModel, barPct, blockerText } from "@/lib/skill-gaps.mjs";
+import { companyCardModel, verdictFor, isConclusion, factLine } from "@/lib/company-history.mjs";
+import { quietModel, checkRan } from "@/lib/quiet-companies.mjs";
+import { COVER_TONES } from "@/lib/cover-tones.mjs";
+import { profileTargetKeywords } from "@/lib/profile-keywords.mjs";
+import {
+  readPersonalizationState,
+  savePersonalization,
+  mergeSections,
+  templatePath,
+  UnsureProfileParseError,
+} from "@/lib/personalization-file.mjs";
+import { compareIds, summaryFields, COMPARE_MAX } from "@/lib/pipeline-compare.mjs";
+import { discoverDocuments, encodeId, decodeId } from "@/lib/documents";
+import { collectWhatsNew, resolveOfferLimit } from "@/lib/whats-new.mjs";
+import { evaluatedKeys, isEvaluated } from "@/lib/whats-new-suppression.mjs";
+import { getNormalizeTextKey } from "@/lib/core/text-key";
+import { loadPortalsDocument, mergePortalFilters, watchedCompanies } from "@/lib/portals-config.mjs";
+import {
+  splitSections,
+  sectionPreview,
+  isLeadSection,
+  firstProseParagraph,
+  cleanHeading,
+} from "@/lib/report-sections.mjs";
 
 export {
   careerOpsRoot,
@@ -170,6 +205,52 @@ export {
   scoreNum,
   scoreTone,
   legitimacyTone,
+  estimateRunCost,
+  formatTokenCount,
+  formatRunCostEstimate,
+  requiresBatchSpendConfirmation,
+  formatBatchSpendConfirmation,
+  claudeUsageTokens,
+  readMachineSummary,
+  scoreLevers,
+  splitTiers,
+  coverageModel,
+  coverageBand,
+  skillGapModel,
+  barPct,
+  blockerText,
+  companyCardModel,
+  verdictFor,
+  isConclusion,
+  factLine,
+  quietModel,
+  checkRan,
+  COVER_TONES,
+  profileTargetKeywords,
+  readPersonalizationState,
+  savePersonalization,
+  mergeSections,
+  templatePath,
+  UnsureProfileParseError,
+  compareIds,
+  summaryFields,
+  COMPARE_MAX,
+  discoverDocuments,
+  encodeId,
+  decodeId,
+  collectWhatsNew,
+  resolveOfferLimit,
+  evaluatedKeys,
+  isEvaluated,
+  getNormalizeTextKey,
+  loadPortalsDocument,
+  mergePortalFilters,
+  watchedCompanies,
+  splitSections,
+  sectionPreview,
+  isLeadSection,
+  firstProseParagraph,
+  cleanHeading,
 };
 
 // The engine module files this bridge depends on, by their path inside web/src.
@@ -208,4 +289,21 @@ export const ENGINE_MODULES = [
   "lib/apply/cover",
   "lib/profile-patch.mjs",
   "lib/format",
+  "lib/run-cost-estimate.mjs",
+  "lib/claude-usage.mjs",
+  "lib/machine-summary.mjs",
+  "lib/keyword-coverage.mjs",
+  "lib/skill-gaps.mjs",
+  "lib/company-history.mjs",
+  "lib/quiet-companies.mjs",
+  "lib/cover-tones.mjs",
+  "lib/profile-keywords.mjs",
+  "lib/personalization-file.mjs",
+  "lib/pipeline-compare.mjs",
+  "lib/documents",
+  "lib/whats-new.mjs",
+  "lib/whats-new-suppression.mjs",
+  "lib/core/text-key",
+  "lib/portals-config.mjs",
+  "lib/report-sections.mjs",
 ];

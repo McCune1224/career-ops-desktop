@@ -106,3 +106,36 @@ export class BridgeError extends Error {
     this.details = details;
   }
 }
+
+/**
+ * The JSON document a core script printed, or null.
+ *
+ * The core's scripts are not uniform: some print one JSON object and nothing
+ * else, some print a diagnostic line first, and some print a JSON ARRAY
+ * (find.mjs) or a bare object with no flag at all (check-jd-archive.mjs). The
+ * document is therefore read from the first line that starts a top-level `[` or
+ * `{` at column zero, and parsed from there to the end of stdout.
+ *
+ * Reading from the START rather than the end is deliberate: the engine's own
+ * parseCliJson() reads from the end because set-status.mjs prints its success
+ * document last, after any diagnostic. These scripts print their document
+ * first, and a diagnostic line after it would otherwise swallow the parse.
+ *
+ * @param {string} stdout
+ * @returns {unknown}
+ */
+export function parseJsonOutput(stdout) {
+  const text = String(stdout ?? "");
+  const lines = text.split("\n");
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    if (!line.startsWith("{") && !line.startsWith("[")) continue;
+    const candidate = lines.slice(i).join("\n");
+    try {
+      return JSON.parse(candidate);
+    } catch {
+      /* not the document */
+    }
+  }
+  return null;
+}

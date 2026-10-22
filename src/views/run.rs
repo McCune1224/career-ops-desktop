@@ -3,7 +3,7 @@
 
 use egui::{Color32, Margin, RichText};
 
-use crate::app::{CareerOpsApp, LogKind, RunKind};
+use crate::app::{CareerOpsApp, LogKind, RunKind, RUN_KINDS};
 use crate::theme::{self, Palette};
 use crate::views::{frame, pill, section};
 
@@ -27,7 +27,7 @@ pub fn ui(ui: &mut egui::Ui, app: &mut CareerOpsApp) {
 fn form_card(ui: &mut egui::Ui, app: &mut CareerOpsApp, t: Palette) {
     theme::card(ui, t).show(ui, |ui| {
         ui.horizontal_wrapped(|ui| {
-            for kind in [RunKind::Evaluate, RunKind::Pdf, RunKind::Cover] {
+            for kind in RUN_KINDS {
                 let selected = app.run.kind == Some(kind);
                 let (fill, stroke, color) = if selected {
                     (t.tint(t.accent).gamma_multiply(2.4), t.accent, t.fg)
@@ -45,6 +45,8 @@ fn form_card(ui: &mut egui::Ui, app: &mut CareerOpsApp, t: Palette) {
                 .min_size(egui::vec2(0.0, 26.0));
                 if ui.add(button).clicked() {
                     app.run.kind = Some(kind);
+                    // The cost of THIS kind, from this client's own history.
+                    app.estimate_cost(kind.id(), 1);
                 }
             }
         });
@@ -59,6 +61,14 @@ fn form_card(ui: &mut egui::Ui, app: &mut CareerOpsApp, t: Palette) {
             RichText::new(match app.run.kind {
                 Some(RunKind::Evaluate) => "Job URL or posting text",
                 Some(RunKind::Pdf) | Some(RunKind::Cover) => "Report number or company",
+                Some(RunKind::Email) | Some(RunKind::Prep) | Some(RunKind::Plan) => {
+                    "Report number or company"
+                }
+                Some(RunKind::Practice) => "A question, or a report number",
+                Some(RunKind::Debrief) => "What happened in the interview",
+                Some(RunKind::RedFlag) => "The company name",
+                Some(RunKind::OfferPrep) => "The offer text",
+                Some(RunKind::FixPortal) => "The company name",
                 None => "Input",
             })
             .text_style(theme::meta())
@@ -82,6 +92,27 @@ fn form_card(ui: &mut egui::Ui, app: &mut CareerOpsApp, t: Palette) {
                     .desired_width(f32::INFINITY)
                     .desired_rows(3),
             );
+        }
+
+        if let Some(estimate) = app.run.estimate.clone() {
+            ui.add_space(8.0);
+            ui.horizontal_wrapped(|ui| {
+                ui.label(
+                    RichText::new(format!("This kind of run: {}", estimate.text))
+                        .text_style(theme::meta())
+                        .color(t.fg_muted),
+                );
+                if estimate.requires_confirmation {
+                    if let Some(confirmation) = &estimate.confirmation {
+                        pill(ui, "spend", t.warn);
+                        ui.label(
+                            RichText::new(confirmation)
+                                .text_style(theme::meta())
+                                .color(t.warn),
+                        );
+                    }
+                }
+            });
         }
 
         ui.add_space(12.0);
@@ -159,6 +190,32 @@ fn form_card(ui: &mut egui::Ui, app: &mut CareerOpsApp, t: Palette) {
                 }
             });
         }
+        if app.run.finished && !app.run.running {
+            ui.add_space(8.0);
+            ui.horizontal_wrapped(|ui| {
+                // A finished run leaves a readable record, so the CLI assistant
+                // can be asked "what did we find on that role?" later.
+                if crate::views::ghost_button(ui, "Save the run log").clicked() {
+                    save_run_log(app);
+                }
+                if let Some(tokens) = app.run.tokens {
+                    ui.label(
+                        RichText::new(format!("{tokens} tokens"))
+                            .monospace()
+                            .text_style(theme::meta())
+                            .color(t.fg_muted),
+                    );
+                }
+                if let Some(cost) = app.run.cost_usd {
+                    ui.label(
+                        RichText::new(format!("${cost:.4}"))
+                            .monospace()
+                            .text_style(theme::meta())
+                            .color(t.fg_muted),
+                    );
+                }
+            });
+        }
     });
 }
 
@@ -211,6 +268,28 @@ pub fn short_duration(seconds: f64) -> String {
     } else {
         format!("{}h {:02}m", total / 3600, (total % 3600) / 60)
     }
+}
+
+/// Save the finished run, so it can be read back and costed.
+fn save_run_log(app: &mut CareerOpsApp) {
+    let kind = app.run.kind.map(|k| k.id()).unwrap_or("evaluate");
+    let output = app
+        .run
+        .log
+        .iter()
+        .filter(|line| line.kind == LogKind::Text)
+        .map(|line| line.text.clone())
+        .collect::<Vec<_>>()
+        .join("\n");
+    let id = format!("{kind}-{}", app.run.report_n.clone().unwrap_or_else(|| "run".into()));
+    app.save_run(
+        &id,
+        kind,
+        &app.run.input.clone(),
+        &output,
+        app.run.tokens,
+        app.run.cost_usd,
+    );
 }
 
 /// Hand the run to the engine.

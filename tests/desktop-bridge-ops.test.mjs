@@ -20,10 +20,12 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { pathToFileURL } from "node:url";
 
-import { BRIDGE_SERVER, REPO_ROOT, fixtureEnv, makeFixture } from "./helpers/desktop-fixture.mjs";
+import { BRIDGE_SERVER, CLIENT_ROOT, REPO_ROOT, fixtureEnv, makeFixture } from "./helpers/desktop-fixture.mjs";
 
 const SERVER = BRIDGE_SERVER;
 
@@ -32,10 +34,10 @@ const SERVER = BRIDGE_SERVER;
  *
  * @param {string} root
  */
-function startBridge(root) {
+function startBridge(root, extraEnv = {}) {
   const child = spawn(process.execPath, [SERVER], {
     cwd: REPO_ROOT,
-    env: fixtureEnv(root),
+    env: { ...fixtureEnv(root), ...extraEnv },
     stdio: ["pipe", "pipe", "pipe"],
   });
 
@@ -367,4 +369,445 @@ test("the cadence read and write go through config/profile.yml", async (t) => {
   const after = await bridge.call("followups", { action: "cadence.get" });
   assert.equal(after.data.enabled, false);
   assert.equal(after.data.overrides.applied_first_days, 4);
+});
+
+// ─── M1: the trustworthy daily loop ───────────────────────────────────────
+
+test("the profile validator surfaces a broken profile as an error", async (t) => {
+  const fixture = makeFixture();
+  const bridge = startBridge(fixture.root);
+  t.after(() => {
+    bridge.stop();
+    fixture.cleanup();
+  });
+
+  const good = await bridge.call("config", { action: "validate" });
+  assert.equal(good.ok, true, JSON.stringify(good.error));
+  assert.equal(good.data.ok, true, "the shipped fixture profile is fine");
+  assert.ok(Array.isArray(good.data.findings));
+
+  // A profile that is a LIST, not a mapping: the core refuses it, and the
+  // refusal has to reach the screen as an error rather than as an empty
+  // default.
+  fs.writeFileSync(
+    path.join(fixture.root, "config", "profile.yml"),
+    "- not\n- a mapping\n",
+    "utf-8",
+  );
+  const broken = await bridge.call("config", { action: "validate" });
+  assert.equal(broken.ok, true, "the validator answers; the finding is in the payload");
+  assert.equal(broken.data.ok, false, "a profile that is a list is not a profile");
+  assert.ok(broken.data.errors.length > 0, "the validator must name the problem");
+  assert.ok(broken.data.message.length > 0, "the screen needs something to say");
+});
+
+test("a bulk status change writes one ledger row per row", async (t) => {
+  const fixture = makeFixture();
+  const bridge = startBridge(fixture.root);
+  t.after(() => {
+    bridge.stop();
+    fixture.cleanup();
+  });
+
+  const before = fs.existsSync(path.join(fixture.root, "data", "status-log.tsv"))
+    ? fs.readFileSync(path.join(fixture.root, "data", "status-log.tsv"), "utf-8")
+    : "";
+
+  const result = await bridge.call("status", { rows: ["1", "2"], status: "Applied" });
+  assert.equal(result.ok, true, JSON.stringify(result.error));
+  assert.equal(result.data.applied, 2, "both rows must change");
+  assert.equal(result.data.failed, 0);
+  assert.equal(result.data.ledgerRows, 2, "each change gets its own ledger row");
+  assert.equal(result.data.results.length, 2);
+
+  const ledger = fs.readFileSync(path.join(fixture.root, "data", "status-log.tsv"), "utf-8");
+  const added = ledger.split("\n").filter((line) => line.trim() && !before.includes(line));
+  assert.equal(added.length, 2, `expected two ledger rows, got ${added.length}`);
+  for (const row of added) {
+    assert.equal(row.split("\t")[4], "desktop", "the ledger must attribute the write to the desktop client");
+  }
+
+  // A row that refuses does not take the others with it.
+  const partial = await bridge.call("status", { rows: ["1", "404"], status: "Rejected" });
+  assert.equal(partial.ok, true);
+  assert.equal(partial.data.applied, 1, "the good row still changes");
+  assert.equal(partial.data.failed, 1, "the missing row is reported, not silently dropped");
+});
+
+test("removing a tracker row goes through tracker.mjs and names the orphaned report", async (t) => {
+  const fixture = makeFixture();
+  const bridge = startBridge(fixture.root);
+  t.after(() => {
+    bridge.stop();
+    fixture.cleanup();
+  });
+
+  const preview = await bridge.call("tracker", { action: "deletePreview", n: "1" });
+  assert.equal(preview.ok, true, JSON.stringify(preview.error));
+  assert.ok(
+    preview.data.orphanedReport,
+    `the preview must name the report the removal orphans: ${preview.data.output}`,
+  );
+
+  const removed = await bridge.call("tracker", { action: "delete", n: "1" });
+  assert.equal(removed.ok, true, JSON.stringify(removed.error));
+  const tracker = fs.readFileSync(path.join(fixture.root, "data", "applications.md"), "utf-8");
+  assert.ok(!tracker.includes("| 1 |"), "the row must be gone");
+  assert.ok(tracker.includes("| 2 |"), "the other rows must survive");
+  // The report file itself is never deleted: it is named so the user can.
+  assert.ok(
+    fs.existsSync(path.join(fixture.root, "reports", "001-acme-2026-01-02.md")),
+    "the report must survive the removal — it is orphaned, not deleted",
+  );
+});
+
+test("a row that turned Applied pins its first follow-up", async (t) => {
+  const fixture = makeFixture();
+  const bridge = startBridge(fixture.root);
+  t.after(() => {
+    bridge.stop();
+    fixture.cleanup();
+  });
+
+  const applied = await bridge.call("status", { n: "1", status: "Applied" });
+  assert.equal(applied.ok, true, JSON.stringify(applied.error));
+
+  // The pin is written by set-status.mjs's OWN seeding hook (#1430), which is
+  // why the status change alone is enough.
+  const log = fs.readFileSync(path.join(fixture.root, "data", "follow-ups.md"), "utf-8");
+  assert.match(
+    log,
+    /- next #1 \d{4}-\d{2}-\d{2}/,
+    "the status change must pin the first follow-up",
+  );
+
+  // The seeder is idempotent: a second call must not stack a second pin.
+  const seeded = await bridge.call("followups", { action: "seed", appNum: "1" });
+  assert.equal(seeded.ok, true, JSON.stringify(seeded.error));
+  assert.equal(seeded.data.seeded, false, "a second seed must be a no-op");
+  const after = fs.readFileSync(path.join(fixture.root, "data", "follow-ups.md"), "utf-8");
+  assert.equal(
+    after.match(/- next #1 /g).length,
+    1,
+    "there must be exactly one pin for the row",
+  );
+});
+
+test("the health check reports a broken report link", async (t) => {
+  const fixture = makeFixture();
+  const bridge = startBridge(fixture.root);
+  t.after(() => {
+    bridge.stop();
+    fixture.cleanup();
+  });
+
+  // A tracker row pointing at a report that does not exist.
+  const trackerPath = path.join(fixture.root, "data", "applications.md");
+  const tracker = fs.readFileSync(trackerPath, "utf-8");
+  fs.writeFileSync(
+    trackerPath,
+    tracker.replace("001-acme-2026-01-02.md", "999-missing-2026-01-02.md"),
+    "utf-8",
+  );
+
+  const result = await bridge.call("maintenance", { tool: "verify" });
+  assert.equal(result.ok, true, JSON.stringify(result.error));
+  assert.match(result.data.output, /999-missing/, "the health check must name the broken link");
+});
+
+test("normalizing rewrites a non-canonical status and is idempotent", async (t) => {
+  const fixture = makeFixture();
+  const bridge = startBridge(fixture.root);
+  t.after(() => {
+    bridge.stop();
+    fixture.cleanup();
+  });
+
+  const trackerPath = path.join(fixture.root, "data", "applications.md");
+  fs.writeFileSync(
+    trackerPath,
+    fs.readFileSync(trackerPath, "utf-8").replace("| SKIP |", "| applied |"),
+    "utf-8",
+  );
+
+  const preview = await bridge.call("maintenance", { tool: "normalize" });
+  assert.equal(preview.ok, true, JSON.stringify(preview.error));
+  assert.equal(preview.data.apply, false, "a preview changes nothing");
+  assert.match(
+    fs.readFileSync(trackerPath, "utf-8"),
+    /\| applied \|/,
+    "a preview must not rewrite the tracker",
+  );
+
+  const applied = await bridge.call("maintenance", { tool: "normalize", apply: true });
+  assert.equal(applied.ok, true, JSON.stringify(applied.error));
+  const after = fs.readFileSync(trackerPath, "utf-8");
+  assert.match(after, /\| Applied \|/, "the status must be canonical now");
+  assert.ok(
+    fs.existsSync(path.join(fixture.root, "data", "applications.md.bak")),
+    "the rewrite must leave a backup",
+  );
+
+  const again = await bridge.call("maintenance", { tool: "normalize", apply: true });
+  assert.equal(again.ok, true);
+  assert.equal(
+    fs.readFileSync(trackerPath, "utf-8"),
+    after,
+    "a second run must change nothing — the run is idempotent",
+  );
+});
+
+test("a finished run leaves a readable record the assistant can read", async (t) => {
+  const fixture = makeFixture();
+  const bridge = startBridge(fixture.root);
+  t.after(() => {
+    bridge.stop();
+    fixture.cleanup();
+  });
+
+  const saved = await bridge.call("runs", {
+    action: "save",
+    run: {
+      id: "evaluate-1",
+      kind: "evaluate",
+      title: "Acme",
+      input: "https://acme.example/job/1",
+      status: "done",
+      tokens: 1200,
+      usd: 0.0123,
+      startedAt: 1_700_000_000_000,
+      steps: [{ kind: "text", label: "Reading the posting" }],
+      output: "A strong match.",
+    },
+  });
+  assert.equal(saved.ok, true, JSON.stringify(saved.error));
+
+  const dir = path.join(fixture.root, "data", "runs");
+  const markdown = fs.readFileSync(path.join(dir, "evaluate-1.md"), "utf-8");
+  assert.match(markdown, /^# Desktop run/m, "the log must be readable markdown");
+  assert.match(markdown, /A strong match\./, "the output must be in the log");
+  assert.ok(
+    fs.existsSync(path.join(dir, "evaluate-1.json")),
+    "the machine half of the record must exist too",
+  );
+
+  const listed = await bridge.call("runs", { action: "list" });
+  assert.equal(listed.ok, true);
+  assert.equal(listed.data.runs.length, 1);
+  assert.equal(listed.data.runs[0].kind, "evaluate");
+});
+
+test("the cost estimate comes from this client's own runs", async (t) => {
+  const fixture = makeFixture();
+  const bridge = startBridge(fixture.root);
+  t.after(() => {
+    bridge.stop();
+    fixture.cleanup();
+  });
+
+  const empty = await bridge.call("cost", { action: "estimate", kind: "evaluate" });
+  assert.equal(empty.ok, true, JSON.stringify(empty.error));
+  assert.equal(empty.data.estimate.tokens, undefined, "no history means no estimate");
+  assert.match(empty.data.text, /first run/, "the fallback must say what is missing");
+
+  for (const tokens of [1000, 2000, 3000]) {
+    await bridge.call("runs", {
+      action: "save",
+      run: {
+        id: `evaluate-${tokens}`,
+        kind: "evaluate",
+        status: "done",
+        tokens,
+        usd: tokens / 100_000,
+        startedAt: 1_700_000_000_000 + tokens,
+      },
+    });
+  }
+
+  const estimate = await bridge.call("cost", { action: "estimate", kind: "evaluate" });
+  assert.equal(estimate.ok, true);
+  assert.equal(estimate.data.estimate.tokens, 2000, "the estimate is the median");
+  assert.equal(estimate.data.estimate.samples, 3);
+
+  // More than one run is a fan-out, and a fan-out asks first.
+  const batch = await bridge.call("cost", { action: "estimate", kind: "evaluate", count: 3 });
+  assert.equal(batch.data.requiresConfirmation, true);
+  assert.match(batch.data.confirmation, /3 workers/);
+
+  const usage = await bridge.call("cost", { action: "usage" });
+  assert.equal(usage.ok, true);
+  assert.equal(usage.data.runs, 3);
+  assert.ok(usage.data.windows.length >= 2, "the sensor reports both windows");
+});
+
+test("a run on an absent CLI says it substituted one", async (t) => {
+  const fixture = makeFixture();
+  const bridge = startBridge(fixture.root);
+  t.after(() => {
+    bridge.stop();
+    fixture.cleanup();
+  });
+
+  // The notice is the ENGINE's: cliSubstitutionNotice() names both the CLI
+  // that was asked for and the one that will run. The client does not write
+  // its own version of that sentence.
+  const { cliSubstitutionNotice } = await import(
+    pathToFileURL(path.join(REPO_ROOT, "web", "src", "lib", "clis.ts")).href
+  );
+  const notice = cliSubstitutionNotice({
+    spec: { id: "claude", name: "Claude Code" },
+    substitutedFrom: "codex",
+  });
+  assert.ok(notice, "the engine must produce a notice when it substitutes");
+  assert.match(notice, /codex/, "the notice must name the CLI that was asked for");
+  assert.match(notice, /Claude Code/, "the notice must name the CLI that will run");
+
+  // And the bridge puts it in the run log: a substitution is a status event,
+  // the same vocabulary the web app streams.
+  const source = fs.readFileSync(path.join(CLIENT_ROOT, "bridge", "ops", "run.mjs"), "utf-8");
+  assert.match(
+    source,
+    /if \(substitution\) send\(\{ type: "status", label: substitution \}\)/,
+    "the run op must send the substitution notice as a status event",
+  );
+
+  // The end-to-end half needs a machine with exactly ONE installed CLI: the
+  // engine substitutes only when there is a single alternative. On a machine
+  // with several CLIs installed the requested one is simply refused, and the
+  // refusal is its own message.
+  const boot = await bridge.call("bootstrap");
+  const installed = boot.data.clis.filter((cli) => cli.installed).map((cli) => cli.id);
+  if (installed.length !== 1) {
+    t.diagnostic(
+      `the end-to-end substitution was not exercised: this machine has ${installed.length} CLIs installed (${installed.join(", ")})`,
+    );
+    return;
+  }
+  const absent = boot.data.clis.find((cli) => !cli.installed);
+  const result = await bridge.call("run", {
+    kind: "evaluate",
+    input: "https://acme.example/job/1",
+    cliId: absent.id,
+  });
+  assert.equal(result.ok, true, `the run must go through: ${JSON.stringify(result.error)}`);
+  const notices = bridge.events
+    .map((entry) => entry.event)
+    .filter((event) => event.type === "status" && /not installed/i.test(event.label ?? ""));
+  assert.ok(
+    notices.length > 0,
+    `the run must say it substituted a CLI: ${JSON.stringify(bridge.events.slice(0, 5))}`,
+  );
+});
+
+test("the bridge reports the protocol version it speaks", async (t) => {
+  const fixture = makeFixture();
+  const bridge = startBridge(fixture.root);
+  t.after(() => {
+    bridge.stop();
+    fixture.cleanup();
+  });
+
+  const version = await bridge.call("version", { action: "get" });
+  assert.equal(version.ok, true, JSON.stringify(version.error));
+  assert.equal(version.data.protocol, 1, "the protocol version must be reported");
+  assert.ok(typeof version.data.engine === "string");
+});
+
+test("a search finds a tracker row by name", async (t) => {
+  const fixture = makeFixture();
+  const bridge = startBridge(fixture.root);
+  t.after(() => {
+    bridge.stop();
+    fixture.cleanup();
+  });
+
+  const found = await bridge.call("tracker", { action: "find", query: "Acme" });
+  assert.equal(found.ok, true, JSON.stringify(found.error));
+  assert.ok(found.data.found >= 1, "the tracker row must be found");
+  assert.equal(found.data.matches[0].company, "Acme");
+
+  const missing = await bridge.call("tracker", { action: "find", query: "Nothing Here" });
+  assert.equal(missing.ok, true);
+  assert.equal(missing.data.found, 0);
+});
+
+test("a hand-added application lands in the tracker with an N/A score", async (t) => {
+  const fixture = makeFixture();
+  const bridge = startBridge(fixture.root);
+  t.after(() => {
+    bridge.stop();
+    fixture.cleanup();
+  });
+
+  const added = await bridge.call("tracker", {
+    action: "add",
+    row: {
+      company: "Gamma Corp",
+      role: "Staff Engineer",
+      date: "2026-02-01",
+      status: "Evaluated",
+    },
+  });
+  assert.equal(added.ok, true, JSON.stringify(added.error));
+  assert.ok(added.data.num, "the new row must get a number");
+
+  const tracker = fs.readFileSync(path.join(fixture.root, "data", "applications.md"), "utf-8");
+  const row = tracker.split("\n").find((line) => line.includes("Gamma Corp"));
+  assert.ok(row, "the row must be in the tracker");
+  assert.match(row, /N\/A/, "a hand-added row carries the N/A score sentinel, never a blank cell");
+  assert.match(row, /Evaluated/);
+});
+
+test("the JDs every report kept are checked by the core's own tool", async (t) => {
+  const fixture = makeFixture();
+  const bridge = startBridge(fixture.root);
+  t.after(() => {
+    bridge.stop();
+    fixture.cleanup();
+  });
+
+  const result = await bridge.call("maintenance", { tool: "jdArchive" });
+  assert.equal(result.ok, true, JSON.stringify(result.error));
+  assert.ok(result.data.data, "the tool's JSON must come back");
+  assert.equal(typeof result.data.data.reportsScanned, "number");
+});
+
+test("a first save on a fresh install seeds the profile and never overwrites one", async (t) => {
+  const fixture = makeFixture();
+  const bridge = startBridge(fixture.root);
+  t.after(() => {
+    bridge.stop();
+    fixture.cleanup();
+  });
+
+  // The fixture already has a profile, so a save must MERGE into it and leave
+  // the rest of it alone.
+  const saved = await bridge.call("config", {
+    action: "setProfile",
+    name: "Alex McCune",
+    email: "alex@example.com",
+  });
+  assert.equal(saved.ok, true, JSON.stringify(saved.error));
+  const profile = fs.readFileSync(path.join(fixture.root, "config", "profile.yml"), "utf-8");
+  assert.match(profile, /Alex McCune/);
+  assert.match(profile, /alex@example\.com/);
+  assert.match(
+    profile,
+    /target_roles:/,
+    "the merge must not drop the rest of the profile",
+  );
+
+  // And a profile that exists but cannot be read is REFUSED, never replaced.
+  fs.writeFileSync(path.join(fixture.root, "config", "profile.yml"), "- not\n- a mapping\n", "utf-8");
+  const refused = await bridge.call("config", {
+    action: "setProfile",
+    name: "Someone Else",
+  });
+  assert.equal(refused.ok, false, "a broken profile must be refused");
+  assert.equal(refused.error.code, "conflict");
+  assert.equal(
+    fs.readFileSync(path.join(fixture.root, "config", "profile.yml"), "utf-8"),
+    "- not\n- a mapping\n",
+    "the refused profile must be byte-identical afterwards",
+  );
 });

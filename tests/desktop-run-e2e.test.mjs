@@ -35,8 +35,9 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
+import { pathToFileURL } from "node:url";
 
-import { BRIDGE_SERVER, REPO_ROOT, fixtureEnv, makeFixture } from "./helpers/desktop-fixture.mjs";
+import { BRIDGE_SERVER, CLIENT_ROOT, REPO_ROOT, fixtureEnv, makeFixture } from "./helpers/desktop-fixture.mjs";
 
 const SERVER = BRIDGE_SERVER;
 
@@ -263,4 +264,145 @@ test("an evaluation started by the desktop client is persisted through the canon
   assert.deepEqual(sentinels, [], `the reserved report number was never released: ${sentinels.join(", ")}`);
 
   assert.notEqual(after, before, "the tracker was not written at all");
+});
+
+// ─── the other run kinds ───────────────────────────────────────────────────
+
+test("the cover run produces a draft letter in the run log", async (t) => {
+  const fixture = makeFixture();
+  const stubDir = fs.mkdtempSync(path.join(fixture.root, "-stub-"));
+  installStubClaude(stubDir);
+  const bridge = startBridge(fixture.root, stubDir);
+  t.after(() => {
+    bridge.stop();
+    fixture.cleanup();
+  });
+
+  const result = await bridge.call("run", {
+    kind: "cover",
+    input: "1",
+    cliId: "claude",
+    brief: JSON.stringify({
+      why: "the role matches my background",
+      problem: "the team needs someone on the estate",
+      approach: "I would start with the estate inventory",
+      tone: "formal",
+    }),
+  });
+  assert.equal(result.ok, true, `the cover run must go through: ${JSON.stringify(result.error)}`);
+  const text = bridge.events
+    .map((entry) => entry.event)
+    .filter((event) => event.type === "text")
+    .map((event) => event.text)
+    .join("\n");
+  assert.match(text, /Evaluation: Stubco/, "the agent's reply must reach the run log");
+  // Nothing is persisted by a cover run: the letter is a draft.
+  const reports = fs.readdirSync(path.join(fixture.root, "reports"));
+  assert.equal(reports.length, 1, "a cover run must not write a report");
+});
+
+test("the pdf run leaves the tracker PDF column alone when the render does not happen", async (t) => {
+  const fixture = makeFixture();
+  const stubDir = fs.mkdtempSync(path.join(fixture.root, "-stub-"));
+  installStubClaude(stubDir);
+  const bridge = startBridge(fixture.root, stubDir);
+  t.after(() => {
+    bridge.stop();
+    fixture.cleanup();
+  });
+
+  const before = fs.readFileSync(path.join(fixture.root, "data", "applications.md"), "utf-8");
+
+  // The stub emits a REPORT envelope, not a CV one, so the pdf run never gets
+  // to a render. The tracker must be untouched: the PDF column says "there is
+  // a PDF", and there is not one yet.
+  const result = await bridge.call("run", {
+    kind: "pdf",
+    input: "1",
+    cliId: "claude",
+  });
+  const after = fs.readFileSync(path.join(fixture.root, "data", "applications.md"), "utf-8");
+  assert.equal(after, before, "the tracker must be byte-identical after a pdf run that never rendered");
+  assert.ok(
+    !after.includes("✅"),
+    "the PDF column must not be marked without a rendered PDF",
+  );
+});
+
+test("a report for a scanned URL carries the recorded posting date", async (t) => {
+  const fixture = makeFixture();
+  // The scan history is what carries the date a posting was first seen.
+  fs.writeFileSync(
+    path.join(fixture.root, "data", "scan-history.tsv"),
+    "url\tfirst_seen\tportal\ttitle\tcompany\tstatus\tlocation\nhttps://stubco.example/job/77\t2026-09-30\tgreenhouse\tStaff Platform Engineer\tStubco\tadded\tRemote\n",
+    "utf-8",
+  );
+  const stubDir = fs.mkdtempSync(path.join(fixture.root, "-stub-"));
+  installStubClaude(stubDir);
+  const bridge = startBridge(fixture.root, stubDir);
+  t.after(() => {
+    bridge.stop();
+    fixture.cleanup();
+  });
+
+  const result = await bridge.call("run", {
+    kind: "evaluate",
+    input: "https://stubco.example/job/77",
+    cliId: "claude",
+  });
+  assert.equal(result.ok, true, `the run must go through: ${JSON.stringify(result.error)}`);
+  // The date the scan recorded travels with the TRACKER ROW, as the core's
+  // own notes column carries it.
+  const tracker = fs.readFileSync(path.join(fixture.root, "data", "applications.md"), "utf-8");
+  const row = tracker.split("\n").find((line) => line.includes("Stubco"));
+  assert.ok(row, "the row must be in the tracker");
+  assert.match(
+    row,
+    /posted: 2026-09-30/,
+    "the row must carry the date the scan recorded",
+  );
+});
+
+test("a CLI that cannot be fenced says so, and is refused a write-capable worker", async (t) => {
+  // The engine's own fencing rules, imported from the career-ops checkout.
+  const { fencingReport, isCliAllowedForCapabilities } = await import(
+    pathToFileURL(path.join(REPO_ROOT, "web", "src", "lib", "cli-fencing.mjs")).href
+  );
+
+  const fencing = fencingReport({
+    cliId: "hermes",
+    cliName: "Hermes Agent",
+    capabilities: { writes: false, network: "fetch" },
+  });
+  assert.ok(
+    fencing.notice && /cannot be permission-restricted/i.test(fencing.notice),
+    `the engine must announce that hermes cannot be permission-restricted: ${JSON.stringify(fencing)}`,
+  );
+
+  assert.equal(
+    isCliAllowedForCapabilities("hermes", { writes: true, network: "fetch" }),
+    false,
+    "a write-capable worker must be refused for a CLI that cannot be fenced",
+  );
+  assert.equal(
+    isCliAllowedForCapabilities("claude", { writes: true, network: "fetch" }),
+    true,
+    "a CLI that can be fenced must be allowed",
+  );
+
+  // And the bridge asks BEFORE it spawns, and says the notice in the log.
+  const source = fs.readFileSync(
+    path.join(CLIENT_ROOT, "bridge", "ops", "run.mjs"),
+    "utf-8",
+  );
+  assert.match(
+    source,
+    /if \(!isCliAllowedForCapabilities\(cliId, capabilities\)\)/,
+    "the run op must refuse a worker the CLI cannot be granted",
+  );
+  assert.match(
+    source,
+    /if \(fencing\.notice\) send\(\{ type: "status", label: fencing\.notice \}\)/,
+    "the run op must announce the fencing notice",
+  );
 });

@@ -31,7 +31,7 @@ import {
   PROFILE_CADENCE_KEYS,
   isMapping,
 } from "../engine.mjs";
-import { runNode, BridgeError } from "../util.mjs";
+import { runNode, BridgeError, parseJsonOutput } from "../util.mjs";
 
 const CADENCE_TIMEOUT_MS = 12_000;
 
@@ -329,6 +329,47 @@ export async function handle(params) {
     }
     atomicWriteWithBackup(file, yaml.dump(merged, { lineWidth: 100, noRefs: true }));
     return { ok: true, followup_cadence: merged.followup_cadence, follow_ups: merged.follow_ups };
+  }
+
+  if (action === "seed") {
+    // The core's own seeder: followup-seed.mjs pins the next follow-up date
+    // for one Applied row, from the cadence in config/profile.yml. The pin is
+    // written into data/follow-ups.md under the core's own file lock.
+    const appNum = parseFollowupId(params.appNum ?? params.num);
+    if (appNum === null) throw new BridgeError("bad-request", "appNum (application #) required");
+    const script = rootScript("followup-seed");
+    if (!fs.existsSync(script)) {
+      throw new BridgeError(
+        "core-script-missing",
+        "seeding a follow-up needs the career-ops scripts; this root has data only",
+      );
+    }
+    const args = [String(appNum), "--json"];
+    if (typeof params.date === "string" && params.date.trim()) args.push("--date", params.date.trim());
+    if (params.dryRun === true) args.push("--dry-run");
+    const res = await runNode(process.execPath, [script, ...args], {
+      cwd: careerOpsRoot(),
+      timeout: 30_000,
+    });
+    const parsed = parseJsonOutput(res.stdout);
+    if (res.code !== 0) {
+      const code = parsed?.code ?? (res.code === 2 ? "not-found" : "failed");
+      const message =
+        code === "NOT_APPLIED"
+          ? "that row is not Applied, so there is no first follow-up to pin"
+          : code === "ROW_NOT_FOUND"
+            ? `no tracker row matches #${appNum}`
+            : "the follow-up could not be seeded";
+      throw new BridgeError(code === "ROW_NOT_FOUND" ? "not-found" : "bad-request", message);
+    }
+    return {
+      ok: true,
+      seeded: parsed?.seeded === true,
+      appNum,
+      nextDate: parsed?.nextDate ?? null,
+      pin: parsed?.pin ?? null,
+      reason: parsed?.reason ?? null,
+    };
   }
 
   throw new BridgeError("bad-request", `unknown followups action: ${action}`);

@@ -1,5 +1,10 @@
 //! The report screen: one application's evaluation, and the things that hang
 //! off it (the source posting, the tailored CV, the cover letter).
+//!
+//! The body is FOLDED: the lead and the verdict are open, every other block is
+//! one click away. A report you cannot scan is a report you avoid, and the
+//! blocks are split by the web app's own splitter, so "block B" means the same
+//! thing here as it does there.
 
 use egui::{RichText};
 
@@ -27,18 +32,14 @@ pub fn ui(ui: &mut egui::Ui, app: &mut CareerOpsApp) {
         verdict_card(ui, &report, t);
         ui.add_space(12.0);
 
-        theme::card(ui, t).show(ui, |ui| {
-            if let Some(markdown_text) = report.markdown.as_deref() {
-                markdown::render(ui, markdown_text);
-            } else {
-                ui.label(RichText::new("This application has no report yet.").color(t.fg_muted));
-            }
-        });
-
+        body_card(ui, &report, t);
         ui.add_space(12.0);
+        checks_card(ui, app, &report, t);
+        ui.add_space(12.0);
+
         ui.horizontal_wrapped(|ui| {
             if crate::views::ghost_button(ui, "Back to the pipeline").clicked() {
-                app.screen = crate::app::Screen::Pipeline;
+                app.go(crate::app::Screen::Pipeline);
             }
             // Re-running is the real action here, and it is worth prefilling:
             // a re-evaluation of the same posting should not need a retyped URL.
@@ -46,7 +47,7 @@ pub fn ui(ui: &mut egui::Ui, app: &mut CareerOpsApp) {
                 if crate::views::ghost_button(ui, "Re-run the evaluation").clicked() {
                     app.run.kind = Some(crate::app::RunKind::Evaluate);
                     app.run.input = url;
-                    app.screen = crate::app::Screen::Run;
+                    app.go(crate::app::Screen::Run);
                 }
             }
         });
@@ -88,6 +89,23 @@ fn verdict_card(ui: &mut egui::Ui, report: &crate::model::Report, t: Palette) {
             }
         });
 
+        // The one-line "why this score", the same prose the web app's verdict
+        // card uses.
+        if !report.lead.is_empty() {
+            ui.add_space(8.0);
+            ui.label(RichText::new(&report.lead).color(t.fg));
+        }
+        // And the verdict itself: the blocks fold, but the answer never does.
+        if let Some(verdict) = &report.verdict {
+            ui.add_space(4.0);
+            ui.label(
+                RichText::new(verdict)
+                    .monospace()
+                    .strong()
+                    .color(t.score(report.application.as_ref().map(|a| a.score_value()).unwrap_or(0.0))),
+            );
+        }
+
         ui.add_space(10.0);
         ui.horizontal_wrapped(|ui| {
             if let Some(url) = report.posting_url.as_deref() {
@@ -117,6 +135,101 @@ fn verdict_card(ui: &mut egui::Ui, report: &crate::model::Report, t: Palette) {
                     .text_style(theme::meta())
                     .color(t.fg_muted),
             );
+        }
+    });
+}
+
+/// The body: the introduction, the lead block open, the rest folded.
+fn body_card(ui: &mut egui::Ui, report: &crate::model::Report, t: Palette) {
+    theme::card(ui, t).show(ui, |ui| {
+        if report.sections.is_empty() {
+            if let Some(markdown_text) = report.markdown.as_deref() {
+                markdown::render(ui, markdown_text);
+            } else {
+                ui.label(
+                    RichText::new("This application has no report yet.")
+                        .color(t.fg_muted),
+                );
+            }
+            return;
+        }
+        if !report.intro.is_empty() {
+            markdown::render(ui, &report.intro);
+            ui.add_space(8.0);
+        }
+        for section in &report.sections {
+            if section.lead {
+                // The lead block is OPEN: it is the one that says whether this
+                // is worth the user's time.
+                ui.label(
+                    RichText::new(&section.heading)
+                        .text_style(theme::h2())
+                        .strong()
+                        .color(t.fg),
+                );
+                markdown::render(ui, &section.content);
+                ui.add_space(8.0);
+            } else {
+                egui::CollapsingHeader::new(
+                    RichText::new(&section.heading)
+                        .text_style(theme::meta())
+                        .strong()
+                        .color(t.fg),
+                )
+                .id_salt(("report-section", section.heading.clone()))
+                .show(ui, |ui| {
+                    if !section.preview.is_empty() {
+                        ui.label(
+                            RichText::new(&section.preview)
+                                .text_style(theme::meta())
+                                .color(t.fg_muted),
+                        );
+                    }
+                    markdown::render(ui, &section.content);
+                });
+            }
+        }
+    });
+}
+
+/// The checks: keyword coverage, score levers and the company's history.
+///
+/// Each is the core's own analysis, asked for on demand, and none of them ever
+/// writes to the CV.
+fn checks_card(ui: &mut egui::Ui, app: &mut CareerOpsApp, report: &crate::model::Report, t: Palette) {
+    theme::card(ui, t).show(ui, |ui| {
+        crate::views::card_title(ui, "Checks", |ui| {
+            ui.label(
+                RichText::new("read-only — none of these changes your CV")
+                    .text_style(theme::meta())
+                    .color(t.fg_muted),
+            );
+        });
+        ui.add_space(8.0);
+        ui.horizontal_wrapped(|ui| {
+            if crate::views::ghost_button(ui, "Keyword coverage").clicked() {
+                app.analysis_action("keywordMatch", &report.n);
+            }
+            if crate::views::ghost_button(ui, "Score levers").clicked() {
+                app.analysis_action("scoreLevers", &report.n);
+            }
+            if let Some(company) = report.application.as_ref().map(|a| a.company.clone()) {
+                if crate::views::ghost_button(ui, "Company history").clicked() {
+                    app.analysis_action("companyHistory", &company);
+                }
+            }
+        });
+        if let Some(result) = app.state.analysis.clone() {
+            ui.add_space(8.0);
+            ui.label(
+                RichText::new(&result.title)
+                    .text_style(theme::meta())
+                    .strong()
+                    .color(t.fg),
+            );
+            if !result.body.is_empty() {
+                ui.label(RichText::new(&result.body).color(t.fg_muted));
+            }
         }
     });
 }

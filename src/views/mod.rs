@@ -2,8 +2,13 @@
 
 pub mod config;
 pub mod cv;
+pub mod documents;
 pub mod followups;
+pub mod interview;
+pub mod maintenance;
+pub mod outcomes;
 pub mod pipeline;
+pub mod portals;
 pub mod report;
 pub mod run;
 pub mod today;
@@ -209,6 +214,35 @@ pub fn card_title(ui: &mut egui::Ui, title: &str, right: impl FnOnce(&mut egui::
         ui.label(RichText::new(title).text_style(TextStyle::Body).strong().color(t.fg));
         ui.with_layout(Layout::right_to_left(Align::Center), right);
     });
+}
+
+/// A list of label and value pairs, the shape a data card wants.
+pub fn key_values(ui: &mut egui::Ui, pairs: &[(&str, String)]) {
+    let t = theme::palette(ui.ctx());
+    egui::Grid::new("key-values")
+        .num_columns(2)
+        .striped(false)
+        .spacing([12.0, 4.0])
+        .show(ui, |ui| {
+            for (label, value) in pairs {
+                ui.label(
+                    RichText::new(*label)
+                        .text_style(theme::meta())
+                        .color(t.fg_muted),
+                );
+                ui.label(RichText::new(value).color(t.fg));
+                ui.end_row();
+            }
+        });
+}
+
+/// Open a path in the user's desktop environment.
+///
+/// The path comes from the engine's own resolver and is already containment
+/// checked there; this hands it to the desktop the same way the report screen
+/// hands over a PDF.
+pub fn open_path(path: &str) {
+    let _ = std::process::Command::new("xdg-open").arg(path).spawn();
 }
 
 // re-exported for the screens that draw their own table chrome

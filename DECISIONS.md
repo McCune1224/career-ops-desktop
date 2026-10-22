@@ -506,3 +506,101 @@ cargo run --release
 Any row that does not behave as the matrix says is the next unit of work — and
 the matrix row, not the code, is what gets corrected first, since the matrix is
 the claim under test.
+
+---
+
+## D-14. The client lives in its own repository, and the engine checkout is named
+
+**Decision.** The native client is its own repository
+(`McCune1224/career-ops-desktop`), beside the career-ops checkout it drives.
+The engine checkout is NAMED, never inferred:
+
+1. `CAREER_OPS_CODE_ROOT`, when it is set.
+2. A sibling checkout of the same parent directory: `../career-ops`.
+3. Otherwise, one actionable sentence, and nothing else.
+
+The resolved value is written back to the app's own settings file, so the
+choice survives a restart.
+
+**Why this replaced the old rule.** D-1 put the client inside the career-ops
+checkout and inferred the checkout by walking up from the bridge until a
+directory with a `web/` folder appeared. That rule was only ever a guess: it
+could find a directory that merely looked like a checkout, and it could not
+survive the client leaving the tree. The upstream owner asked for their tree
+to be left untouched, so the client moved — and the guess had to go with it.
+
+**Why the sibling rule.** One person's client, developed beside one checkout,
+is the shape this actually has: `career-ops-desktop/` and `career-ops/` in the
+same parent directory. The rule is a default, not a requirement: the
+environment variable overrides it, and the app's own settings remember what was
+resolved.
+
+**One implementation of the rule.** `bridge/code-root.mjs` and
+`src/code_root.rs` implement it, in two languages, and
+`tests/desktop-engine-parity.test.mjs::the engine checkout is resolved the
+same way in Node and in Rust` holds the two to the same variable name, the
+same sibling directory name, the same resolved path and the same failure
+sentence. The app resolves it and passes it to the bridge in the environment;
+the bridge resolves it itself only when it is started on its own.
+
+**What it costs.** The career-ops checkout is no longer part of the npm
+package or of the updater's manifest, and `validate-system-paths-coverage.mjs`
+goes back to covering the upstream tree exactly. The client is no longer
+installed by the core's updater — it is one person's tool, and it is a
+repository of its own.
+
+---
+
+## D-15. A MODE run's prompt is the client's, and only the client's
+
+**Decision.** The client can run a career-ops MODE — an interview prep pack, a
+practice round, a debrief, an offer walk-through, an application email — by
+spawning the agent CLI with a prompt that names the mode file in the checkout
+and tells the agent to follow it exactly. The prompt itself lives in
+`bridge/mode-prompt.mjs`.
+
+**Why the prompt is not the engine's.** `web/src/lib/run-prompts.mjs`'s
+`buildPrompt()` knows five kinds: evaluate, pdf, cover, research and
+fix-portal. The modes above are not among them, and the fallback branch for an
+unknown kind is the EVALUATION prompt. So there was no engine prompt to call.
+
+The alternative was to add a branch to `buildPrompt()`, and that was refused:
+the career-ops checkout is upstream's, and the whole point of D-14 is that it
+is left byte-for-byte alone. Writing to it to serve this client would put the
+client's needs back into the engine.
+
+**What the prompt does and does not contain.** It says which mode file to
+read, that the run is unattended, that the agent must not write files, and the
+core's own output-language rule (`profile-language.mjs`'s
+`outputLanguageInstruction()`, the same one the CLI and the web app inject).
+It contains no statement of what the mode does — the mode file is the rule,
+and the prompt only names it. Nothing about a mode can drift, because nothing
+about a mode is restated.
+
+**Everything else is the engine's, unchanged.** The CLI is resolved by
+`resolveCliOrFallback()`, the capabilities come from `capabilitiesFor()` (an
+unknown kind resolves to the least-capable record), the argv is built by
+`claude-invocation.mjs` and `run-cli-support.mjs`, the fence is
+`cli-fencing.mjs`'s, the spawn is `spawnHeadlessCli()`, the stream is parsed by
+`run-cli-support.mjs`, and the time limit is `killMsForKind()`'s shared
+default. The run budget was not raised, and no kind was given a longer one.
+
+---
+
+## D-16. Ten screens, ten shortcuts, and the maintenance tools in Config
+
+**Decision.** The sidebar has ten entries — Today, Pipeline, Run, CV,
+Follow-ups, Documents, Portals, Interview, Outcomes, Config — and Ctrl 1..9
+plus Ctrl 0 reach every one of them.
+
+**Why the number is ten.** A screen the keyboard cannot reach is a screen the
+keyboard test cannot prove. The nav grew as the capabilities grew, and the
+shortcut scheme was made to match the nav rather than the other way round:
+ten entries, ten shortcuts, `tests/screens.rs::ctrl_number_keys_reach_every_screen`
+walks the nav and presses the key for each entry.
+
+**Why maintenance lives in Config.** The core's eight repair tools are upkeep,
+and a screen of their own would be one more place to look for a button that
+only matters when something has already gone wrong. They sit in Config next to
+the plugins and the profile check, and each one proposes before it acts: the
+first click shows what the script would do, the second applies it.

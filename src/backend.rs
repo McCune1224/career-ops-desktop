@@ -25,6 +25,13 @@ pub trait Backend: Send + Sync {
         brief: Option<&str>,
     ) -> Result<u64, BridgeError>;
 
+    /// Start a batch of runs, one per input, in order.
+    ///
+    /// A batch is the SAME worker, once per input: each run has its own time
+    /// limit and its own report, and the client confirmed the spend before the
+    /// first one started.
+    fn start_batch(&self, kind: &str, inputs: &[String], cli_id: &str) -> Result<u64, BridgeError>;
+
     /// Take the events queued since the last call.
     fn poll_events(&self) -> Vec<StreamEvent>;
 }
@@ -74,6 +81,15 @@ impl Backend for BridgeBackend {
             "input": input,
             "cliId": cli_id,
             "brief": brief,
+        });
+        self.bridge.start_stream("run", params)
+    }
+
+    fn start_batch(&self, kind: &str, inputs: &[String], cli_id: &str) -> Result<u64, BridgeError> {
+        let params = json!({
+            "kind": kind,
+            "inputs": inputs,
+            "cliId": cli_id,
         });
         self.bridge.start_stream("run", params)
     }
@@ -151,6 +167,17 @@ impl Backend for FakeBackend {
             .push((
                 "run".to_string(),
                 json!({ "kind": kind, "input": input, "cliId": cli_id, "brief": brief }),
+            ));
+        Ok(1)
+    }
+
+    fn start_batch(&self, kind: &str, inputs: &[String], cli_id: &str) -> Result<u64, BridgeError> {
+        self.calls
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push((
+                "run".to_string(),
+                json!({ "kind": kind, "inputs": inputs, "cliId": cli_id }),
             ));
         Ok(1)
     }

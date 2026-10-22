@@ -17,7 +17,7 @@ import {
   isMapping,
   profilePatchError,
 } from "../engine.mjs";
-import { BridgeError } from "../util.mjs";
+import { runNode, BridgeError, parseJsonOutput } from "../util.mjs";
 
 function isObj(v) {
   return !!v && typeof v === "object" && !Array.isArray(v);
@@ -124,6 +124,40 @@ export async function handle(params) {
     const merged = deepMerge(base, proposed);
     atomicWriteWithBackup(file, yaml.dump(merged, { lineWidth: 100, noRefs: true }));
     return { ok: true, seeded };
+  }
+
+  if (action === "validate") {
+    // The core's own validator, not a second set of rules here.
+    // validate-profile.mjs --json answers with the findings it found; an
+    // unreadable profile is a finding, not an empty default.
+    const script = rootScript("validate-profile");
+    if (!fs.existsSync(script)) {
+      throw new BridgeError(
+        "core-script-missing",
+        "validating the profile needs the career-ops scripts; this root has data only",
+      );
+    }
+    const res = await runNode(process.execPath, [script, "--json"], {
+      cwd: careerOpsRoot(),
+      timeout: 30_000,
+    });
+    const parsed = parseJsonOutput(res.stdout);
+    const findings = Array.isArray(parsed?.findings) ? parsed.findings : [];
+    const errors = findings.filter((f) => f?.level === "error");
+    const warnings = findings.filter((f) => f?.level === "warn");
+    return {
+      ok: res.code === 0 && errors.length === 0,
+      exitCode: res.code,
+      profile: parsed?.profile ?? null,
+      findings,
+      errors,
+      warnings,
+      message: errors.length
+        ? errors[0].message ?? "the profile has problems"
+        : warnings.length
+          ? warnings[0].message ?? "the profile has warnings"
+          : "the profile is fine",
+    };
   }
 
   throw new BridgeError("bad-request", `unknown config action: ${action}`);

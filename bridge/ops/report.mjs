@@ -13,6 +13,10 @@ import {
   pdfPathStatusForReport,
   resolveTailoredCv,
   resolveTailoredCover,
+  splitSections,
+  sectionPreview,
+  isLeadSection,
+  firstProseParagraph,
 } from "../engine.mjs";
 import { BridgeError } from "../util.mjs";
 
@@ -36,6 +40,26 @@ export async function handle(params) {
   // before the URL header existed still has the posting URL in the tracker.
   const trackerUrl = app?.url && app.url !== "—" ? app.url : null;
 
+  // The report's sections, split by the web app's own splitter, so the screen
+  // can show the lead and fold the rest without re-deriving what a block is.
+  const body = report?.content ?? "";
+  const split = splitSections(body);
+  const sections = split.sections.map((section) => ({
+    heading: section.heading,
+    letter: section.letter,
+    content: section.content,
+    preview: sectionPreview(section.content),
+    lead: isLeadSection(section),
+  }));
+
+  // The VERDICT line is the report's headline conclusion. The blocks fold, so
+  // it is lifted out: a folded body must never hide the answer.
+  const verdictLine = body
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith("VERDICT:"))
+    .pop();
+
   const pdf = await pdfPathStatusForReport(n);
   const cvPdf = pdf.status === "found" ? pdf.path : null;
   const coverPdf = app ? await resolveTailoredCover(app.company, n) : null;
@@ -49,6 +73,10 @@ export async function handle(params) {
     title: meta?.title ?? null,
     legitimacy: meta?.legitimacy ?? null,
     fields: meta?.fields ?? [],
+    intro: split.intro,
+    lead: firstProseParagraph(body),
+    verdict: verdictLine ?? null,
+    sections,
     postingUrl: urlField ?? trackerUrl,
     trackerUrl,
     cvPdf,

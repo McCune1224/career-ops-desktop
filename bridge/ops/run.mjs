@@ -65,12 +65,74 @@ import {
   localISODate,
 } from "../engine.mjs";
 import { BridgeError } from "../util.mjs";
+import { isModeKind, buildModePrompt, modeFile, MODE_KINDS } from "../mode-prompt.mjs";
 
 /**
- * @param {{kind?: string, input?: string, cliId?: string, brief?: unknown}} params
+ * Run one worker, or a batch of them.
+ *
+ * A batch is the SAME worker, once per input, in order, each with its own
+ * time limit and its own report. It is not a wider budget: `killMsForKind()`
+ * applies to every run in the batch exactly as it does to a single one, and
+ * the batch spends tokens one posting at a time, each of which the client
+ * confirmed before it started.
+ *
+ * @param {{kind?: string, input?: string, inputs?: string[], cliId?: string, brief?: unknown}} params
  * @param {{emit: (event: unknown) => void}} ctx
  */
 export async function handle(params, ctx) {
+  const inputs = Array.isArray(params.inputs)
+    ? params.inputs.map((value) => String(value ?? "").trim()).filter(Boolean)
+    : [];
+  if (inputs.length === 0) {
+    return await runOne(params, ctx);
+  }
+  const results = [];
+  for (const [index, input] of inputs.entries()) {
+    ctx.emit({
+      type: "status",
+      label: `Batch ${index + 1} of ${inputs.length}: ${input}`,
+    });
+    const result = await runOne({ ...params, input }, ctx);
+    results.push(result);
+  }
+  return {
+    ok: results.every((result) => result && result.ok === true),
+    kind: params.kind ?? "evaluate",
+    batch: results.length,
+    results,
+  };
+}
+
+/**
+ * The cover brief, as the engine's parseCoverRequest wants it.
+ *
+ * The four answers are an OBJECT on the engine's side. The client sends them
+ * as JSON text, so the text is parsed here rather than in the engine, which
+ * has no reason to know how a client chooses to carry them.
+ *
+ * @param {unknown} raw
+ * @returns {unknown}
+ */
+function parseBrief(raw) {
+  if (raw === null || raw === undefined) return null;
+  if (typeof raw === "object") return raw;
+  if (typeof raw !== "string") return null;
+  const trimmed = raw.trim();
+  if (!trimmed.startsWith("{")) return null;
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * One worker run.
+ *
+ * @param {{kind?: string, input?: string, cliId?: string, brief?: unknown}} params
+ * @param {{emit: (event: unknown) => void}} ctx
+ */
+async function runOne(params, ctx) {
   const kind = params.kind ?? "evaluate";
   const input = typeof params.input === "string" ? params.input.trim() : "";
   const requestedCliId = typeof params.cliId === "string" ? params.cliId : "";
@@ -111,6 +173,18 @@ export async function handle(params, ctx) {
     );
   }
 
+  // A MODE run: the agent follows the mode file in the checkout, and the
+  // prompt that says so is the client's (see bridge/mode-prompt.mjs and
+  // DECISIONS.md D-15). The mode file must be there, or the run is refused
+  // rather than sent an agent a mode it cannot read.
+  const modeRun = isModeKind(kind);
+  if (modeRun && !fs.existsSync(modeFile(kind))) {
+    throw new BridgeError(
+      "incomplete-checkout",
+      `This needs the ${MODE_KINDS[kind].file} mode file; this data root has no modes.`,
+    );
+  }
+
   if (kind === "fix-portal" && !isShellSafeCompanyName(input)) {
     throw new BridgeError(
       "bad-request",
@@ -134,7 +208,9 @@ export async function handle(params, ctx) {
     pdfPaths = pathsResult.paths;
   }
 
-  const coverRequest = kind === "cover" ? parseCoverRequest({ input, brief: params.brief, root: careerOpsRoot(), findReportFile }) : undefined;
+  const coverRequest = kind === "cover"
+    ? parseCoverRequest({ input, brief: parseBrief(params.brief), root: careerOpsRoot(), findReportFile })
+    : undefined;
   if (coverRequest && !coverRequest.ok) {
     throw new BridgeError("bad-request", coverRequest.error);
   }
@@ -144,17 +220,19 @@ export async function handle(params, ctx) {
       ? readInbox().find((j) => j.url === input)?.postedAt ?? readScanDates().get(input)
       : undefined;
   const cvTemplate = kind === "pdf" ? await resolveCvTemplate(careerOpsRoot()) : undefined;
-  const prompt = buildPrompt({
-    kind,
-    input,
-    memory: readMemory(),
-    today,
-    postedAt,
-    lang,
-    cvTemplate,
-    reportFile: pdfPaths?.reportFile ?? (coverRequest?.ok ? coverRequest.reportFile : undefined),
-    coverBrief: coverRequest?.ok ? coverRequest.brief : undefined,
-  });
+  const prompt = modeRun
+    ? await buildModePrompt(kind, input, { today })
+    : buildPrompt({
+        kind,
+        input,
+        memory: readMemory(),
+        today,
+        postedAt,
+        lang,
+        cvTemplate,
+        reportFile: pdfPaths?.reportFile ?? (coverRequest?.ok ? coverRequest.reportFile : undefined),
+        coverBrief: coverRequest?.ok ? coverRequest.brief : undefined,
+      });
 
   const isClaude = cliId === "claude";
   const args = isClaude ? claudeCliArgs({ kind, prompt }) : (spec.streamArgs ?? spec.args)(prompt);

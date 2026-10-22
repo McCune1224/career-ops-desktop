@@ -25,6 +25,12 @@ pub fn ui(ui: &mut egui::Ui, app: &mut CareerOpsApp) {
             ui.add_space(12.0);
             theme::card(ui, t).show(ui, |ui| profile_section(ui, app, t));
             ui.add_space(12.0);
+            theme::card(ui, t).show(ui, |ui| profile_check_section(ui, app, t));
+            ui.add_space(12.0);
+            theme::card(ui, t).show(ui, |ui| plugins_section(ui, app, t));
+            ui.add_space(12.0);
+            theme::card(ui, t).show(ui, |ui| maintenance_section(ui, app, t));
+            ui.add_space(12.0);
             theme::card(ui, t).show(ui, |ui| install_section(ui, app, t));
         },
     );
@@ -260,6 +266,147 @@ fn field(ui: &mut egui::Ui, label: &str, value: &mut String, t: Palette) {
     ui.end_row();
 }
 
+/// What the core's own validator says about the profile.
+fn profile_check_section(ui: &mut egui::Ui, app: &mut CareerOpsApp, t: Palette) {
+    heading(ui, "Profile check", t);
+    ui.horizontal_wrapped(|ui| {
+        if primary_button(ui, "Check the profile", true).clicked() {
+            app.validate_profile();
+        }
+        if ghost_button(ui, "Health check").clicked() {
+            app.run_maintenance("verify", false);
+        }
+    });
+    let Some(validation) = app.state.profile_validation.clone() else {
+        return;
+    };
+    ui.add_space(6.0);
+    if validation.ok {
+        ui.horizontal_wrapped(|ui| {
+            pill(ui, "fine", t.good);
+            ui.label(RichText::new("the profile is fine").color(t.good));
+        });
+        return;
+    }
+    for finding in validation.errors.iter().chain(validation.warnings.iter()) {
+        ui.horizontal_wrapped(|ui| {
+            pill(
+                ui,
+                &finding.level,
+                if finding.level == "error" { t.bad } else { t.warn },
+            );
+            ui.label(RichText::new(&finding.message).color(t.fg));
+            if let Some(suggestion) = &finding.suggestion {
+                ui.label(
+                    RichText::new(suggestion)
+                        .text_style(theme::meta())
+                        .color(t.fg_muted),
+                );
+            }
+        });
+    }
+}
+
+/// The core's own repair tools.
+///
+/// A proposal first and an action second: a repair is a change to the user's
+/// tracker, and the user sees what the script would do before it does it.
+fn maintenance_section(ui: &mut egui::Ui, app: &mut CareerOpsApp, t: Palette) {
+    heading(ui, "Maintenance", t);
+    for (tool, description) in crate::views::maintenance::TOOLS {
+        ui.horizontal_wrapped(|ui| {
+            ui.label(RichText::new(description).color(t.fg));
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ghost_button(ui, "Apply").clicked() {
+                    app.run_maintenance(tool, true);
+                }
+                if ghost_button(ui, "Preview").clicked() {
+                    app.run_maintenance(tool, false);
+                }
+            });
+        });
+        ui.add_space(3.0);
+    }
+    if let Some(result) = app.state.maintenance.clone() {
+        ui.add_space(6.0);
+        ui.horizontal_wrapped(|ui| {
+            pill(
+                ui,
+                if result.apply { "applied" } else { "proposal" },
+                if result.ok { t.good } else { t.warn },
+            );
+            ui.label(
+                RichText::new(result.output.lines().next().unwrap_or("").to_string())
+                    .text_style(theme::meta())
+                    .color(t.fg_muted),
+            );
+        });
+    }
+}
+
+/// The plugins the core can load.
+fn plugins_section(ui: &mut egui::Ui, app: &mut CareerOpsApp, t: Palette) {
+    heading(ui, "Plugins", t);
+    ui.horizontal_wrapped(|ui| {
+        if ghost_button(ui, "Reload").clicked() {
+            app.load_plugins();
+        }
+        if ghost_button(ui, "Audit a plugin").clicked() {
+            let dir = std::env::var("CAREER_OPS_PLUGIN_DIR").unwrap_or_default();
+            let params = serde_json::json!({ "action": "audit", "dir": dir });
+            match app.backend.call("plugins", params) {
+                Ok(value) => {
+                    let output = value
+                        .get("output")
+                        .and_then(serde_json::Value::as_str)
+                        .unwrap_or("")
+                        .to_string();
+                    app.state.say(output.lines().next().unwrap_or("audited").to_string());
+                }
+                Err(e) => app.state.fail(format!("could not audit the plugin: {e}")),
+            }
+        }
+    });
+    let Some(plugins) = app.state.plugins.clone() else {
+        return;
+    };
+    if plugins.is_empty() {
+        ui.label(
+            RichText::new("The core reports no plugins.")
+                .text_style(theme::meta())
+                .color(t.fg_muted),
+        );
+        return;
+    }
+    for plugin in &plugins {
+        ui.horizontal(|ui| {
+            ui.label(RichText::new(&plugin.id).strong().color(t.fg));
+            if !plugin.name.is_empty() {
+                ui.label(RichText::new(&plugin.name).color(t.fg_muted));
+            }
+            pill(
+                ui,
+                if plugin.enabled { "enabled" } else { "off" },
+                if plugin.enabled { t.good } else { t.fg_muted },
+            );
+            let id = plugin.id.clone();
+            if ghost_button(ui, "Disable").clicked() {
+                match app
+                    .backend
+                    .call("plugins", serde_json::json!({ "action": "disable", "id": id }))
+                {
+                    Ok(_) => {
+                        app.load_plugins();
+                        app.state.say("disabled the plugin");
+                    }
+                    Err(e) => app.state.fail(format!("could not disable the plugin: {e}")),
+                }
+            }
+        });
+        ui.add_space(3.0);
+    }
+}
+
 /// Where the app is reading from and writing to.
 fn install_section(ui: &mut egui::Ui, app: &mut CareerOpsApp, t: Palette) {
     heading(ui, "This install", t);
@@ -267,9 +414,27 @@ fn install_section(ui: &mut egui::Ui, app: &mut CareerOpsApp, t: Palette) {
         ui.label(RichText::new("Not loaded.").color(t.fg_muted));
         return;
     };
+    let version = app
+        .state
+        .version
+        .as_ref()
+        .map(|v| {
+            if v.protocol == crate::bridge::PROTOCOL_VERSION {
+                format!("bridge protocol {} · engine {}", v.protocol, v.engine)
+            } else {
+                format!(
+                    "MISMATCH — the app speaks protocol {} and the bridge speaks {}",
+                    crate::bridge::PROTOCOL_VERSION,
+                    v.protocol
+                )
+            }
+        })
+        .unwrap_or_else(|| "the bridge version is unknown".to_string());
     let rows = [
         ("Data root", state.data_root.clone()),
         ("Engine checkout", state.code_root.clone()),
+        ("Client", format!("version {}", env!("CARGO_PKG_VERSION"))),
+        ("Versions", version),
         (
             "Inventory",
             format!(
@@ -306,7 +471,23 @@ fn install_section(ui: &mut egui::Ui, app: &mut CareerOpsApp, t: Palette) {
             );
         });
     }
-    let _ = ghost_button;
+    ui.add_space(6.0);
+    ui.horizontal_wrapped(|ui| {
+        if ghost_button(ui, "Check the version").clicked() {
+            app.load_version();
+        }
+    });
+    if !app.version_matches() {
+        ui.horizontal_wrapped(|ui| {
+            pill(ui, "mismatch", t.bad);
+            ui.label(
+                RichText::new(
+                    "the app and the bridge do not agree — no run will start until they do.",
+                )
+                .color(t.bad),
+            );
+        });
+    }
 }
 
 /// A card heading with a hairline under it.

@@ -9,6 +9,10 @@
 // The only difference from the web route is the ledger attribution: `--source
 // desktop` instead of `--source web`, so a status change made in the native
 // client is distinguishable in data/status-log.tsv.
+//
+// The bulk action is the SAME writer, once per row. One call per row is the
+// point: each change gets its own ledger row, its own lock, and its own
+// outcome, and a row that refuses does not take the others with it.
 import fs from "node:fs";
 import { careerOpsRoot, rootScript, canonicalizeStatus, trackerRowArg, parseCliJson, clientErrorMessage } from "../engine.mjs";
 import { runNode, BridgeError } from "../util.mjs";
@@ -43,29 +47,14 @@ function boundedLockWait() {
 }
 
 /**
- * @param {{n?: string | number, status?: string, note?: string}} params
+ * Change one row's status, through the canonical writer.
+ *
+ * @param {string} row the tracker row number, already validated
+ * @param {string} canon the canonical state
+ * @param {string | undefined} note
+ * @returns {Promise<{status: string, changed: boolean, statusLogged: boolean}>}
  */
-export async function handle(params) {
-  const n = params.n;
-  const status = typeof params.status === "string" ? params.status : "";
-  if (n === undefined || n === null || !status.trim()) {
-    throw new BridgeError("bad-request", "n and status required");
-  }
-  // Rejected before spawning: these characters would break the markdown row.
-  if (/[|\r\n*]/.test(status)) {
-    throw new BridgeError("bad-request", "invalid status (table-breaking characters)");
-  }
-  const canon = canonicalizeStatus(status);
-  if (!canon) {
-    throw new BridgeError("bad-request", `not a canonical status: ${status}`);
-  }
-  // `n` arrives as untrusted JSON; String(n) on an object would send
-  // "[object Object]" to --row and return the CLI's usage text.
-  const row = trackerRowArg(n);
-  if (!row) {
-    throw new BridgeError("bad-request", "n must be a tracker row number");
-  }
-
+async function changeStatus(row, canon, note) {
   const script = rootScript("set-status");
   if (!fs.existsSync(script)) {
     throw new BridgeError(
@@ -75,8 +64,8 @@ export async function handle(params) {
   }
 
   const args = ["--row", row, canon, "--source", "desktop", "--json"];
-  if (typeof params.note === "string" && params.note.trim()) {
-    args.push("--note", params.note.trim());
+  if (typeof note === "string" && note.trim()) {
+    args.push("--note", note.trim());
   }
 
   const res = await runNode(process.execPath, [script, ...args], {
@@ -109,6 +98,68 @@ export async function handle(params) {
     changed: parsed.changed === true,
     statusLogged: parsed.statusLogged === true,
   };
+}
+
+/**
+ * @param {{n?: string | number, status?: string, note?: string, rows?: Array<string | number>, apply?: boolean}} params
+ */
+export async function handle(params) {
+  const status = typeof params.status === "string" ? params.status : "";
+  if (!status.trim()) {
+    throw new BridgeError("bad-request", "status required");
+  }
+  // Rejected before spawning: these characters would break the markdown row.
+  if (/[|\r\n*]/.test(status)) {
+    throw new BridgeError("bad-request", "invalid status (table-breaking characters)");
+  }
+  const canon = canonicalizeStatus(status);
+  if (!canon) {
+    throw new BridgeError("bad-request", `not a canonical status: ${status}`);
+  }
+
+  // The bulk path: one writer call per row, each with its own outcome.
+  if (Array.isArray(params.rows)) {
+    const rows = params.rows.map((n) => trackerRowArg(n)).filter((n) => n !== null);
+    if (rows.length === 0) {
+      throw new BridgeError("bad-request", "rows required");
+    }
+    const note = typeof params.note === "string" ? params.note.trim() : undefined;
+    const results = [];
+    for (const row of rows) {
+      try {
+        const outcome = await changeStatus(row, canon, note);
+        results.push({ n: row, ok: true, ...outcome });
+      } catch (err) {
+        results.push({
+          n: row,
+          ok: false,
+          error: err instanceof BridgeError ? err.message : String(err),
+          code: err instanceof BridgeError ? err.code : "failed",
+        });
+      }
+    }
+    const applied = results.filter((r) => r.ok).length;
+    return {
+      status: canon,
+      applied,
+      failed: results.length - applied,
+      ledgerRows: results.filter((r) => r.ok && r.statusLogged).length,
+      results,
+    };
+  }
+
+  const n = params.n;
+  if (n === undefined || n === null) {
+    throw new BridgeError("bad-request", "n and status required");
+  }
+  // `n` arrives as untrusted JSON; String(n) on an object would send
+  // "[object Object]" to --row and return the CLI's usage text.
+  const row = trackerRowArg(n);
+  if (!row) {
+    throw new BridgeError("bad-request", "n must be a tracker row number");
+  }
+  const outcome = await changeStatus(row, canon, typeof params.note === "string" ? params.note : undefined);
+  return outcome;
 }
 
 export const op = "status";
