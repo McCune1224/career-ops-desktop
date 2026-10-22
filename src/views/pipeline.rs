@@ -95,6 +95,8 @@ pub fn ui(ui: &mut egui::Ui, app: &mut CareerOpsApp) {
         }
 
         ui.add_space(14.0);
+        compare_card(ui, app, t);
+        ui.add_space(14.0);
         add_card(ui, app, t);
         ui.add_space(14.0);
         find_card(ui, app, t);
@@ -290,6 +292,34 @@ fn bulk_bar(ui: &mut egui::Ui, app: &mut CareerOpsApp, states: &[String], t: Pal
         });
     });
     ui.add_space(8.0);
+}
+
+/// Compare two or three applications side by side.
+fn compare_card(ui: &mut egui::Ui, app: &mut CareerOpsApp, t: Palette) {
+    theme::card(ui, t).show(ui, |ui| {
+        crate::views::card_title(ui, "Compare", |ui| {
+            ui.label(
+                RichText::new("pick two or three rows above, then compare them")
+                    .text_style(theme::meta())
+                    .color(t.fg_muted),
+            );
+        });
+        ui.add_space(8.0);
+        ui.horizontal_wrapped(|ui| {
+            if crate::views::primary_button(ui, "Compare the picked rows", app.pipeline_view.selected.len() >= 2)
+                .clicked()
+            {
+                let rows = app.pipeline_view.selected.clone();
+                app.analysis_action_ids("compare", &rows);
+            }
+        });
+        if let Some(result) = app.state.analysis.clone() {
+            if result.action == "compare" {
+                ui.add_space(8.0);
+                ui.label(RichText::new(&result.body).color(t.fg_muted));
+            }
+        }
+    });
 }
 
 /// The "add an application by hand" form.

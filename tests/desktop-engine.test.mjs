@@ -944,3 +944,222 @@ test("a form's questions are answered from a prepared pack, and nothing is submi
   assert.equal(result.ok, false, "a missing PDF must be refused");
   assert.equal(result.submitted, undefined, "the op never reports a submission");
 });
+
+test("a company name becomes a verified board, never a guessed URL", async (t) => {
+  const fixture = makeFixture();
+  const bridge = startBridge(fixture.root);
+  t.after(() => {
+    bridge.stop();
+    fixture.cleanup();
+  });
+
+  const result = await bridge.call("portals", {
+    action: "discover",
+    names: ["A Company That Does Not Exist Anywhere 12345"],
+  });
+  assert.equal(result.ok, true, JSON.stringify(result.error));
+  // Whatever the network did, the client never invents a board: an entry is
+  // either resolved from a probed ATS, or it is unresolved with a reason.
+  for (const entry of result.data.resolved) {
+    assert.ok(entry.careers_url, "a resolved board must carry the URL the probe found");
+    assert.ok(entry.name, "and the company it belongs to");
+  }
+  for (const entry of result.data.unresolved) {
+    assert.ok(entry.reason, "an unresolved company must say why");
+  }
+});
+
+test("a liveness verdict is never 'active' for a posting that is not there", async (t) => {
+  const fixture = makeFixture();
+  const bridge = startBridge(fixture.root);
+  t.after(() => {
+    bridge.stop();
+    fixture.cleanup();
+  });
+
+  const result = await bridge.call("liveness", {
+    action: "check",
+    url: "https://no-such-host-12345.example/job/1",
+  });
+  if (!result.ok) {
+    // The browser fallback needs Playwright, which a fixture cannot install.
+    // The refusal is the honest outcome, and the contract still holds.
+    t.diagnostic(`the browser fallback is not installed here: ${result.error?.message}`);
+  } else {
+    assert.ok(
+      ["expired", "uncertain"].includes(result.data.verdict),
+      `a posting that cannot be read is never "active": ${result.data.verdict}`,
+    );
+  }
+
+  // A url that is not a url is refused before anything is spawned.
+  const bad = await bridge.call("liveness", { action: "check", url: "not-a-url" });
+  assert.equal(bad.ok, false);
+  assert.equal(bad.error.code, "bad-request");
+});
+
+test("the JD is fetched without a browser where an ATS API exists", async (t) => {
+  const fixture = makeFixture();
+  const bridge = startBridge(fixture.root);
+  t.after(() => {
+    bridge.stop();
+    fixture.cleanup();
+  });
+
+  const result = await bridge.call("liveness", {
+    action: "fetchJd",
+    url: "https://no-such-host-12345.example/job/1",
+  });
+  // A miss is the expected case, and it is not an error: the caller falls
+  // through to the browser path.
+  assert.equal(result.data.found, false);
+  assert.equal(result.data.text, "");
+});
+
+test("the competency extractor only proposes what the core's vocabulary knows", async (t) => {
+  const fixture = makeFixture();
+  const bridge = startBridge(fixture.root);
+  t.after(() => {
+    bridge.stop();
+    fixture.cleanup();
+  });
+
+  const result = await bridge.call("profile", {
+    action: "expand",
+    body: "Ran Kubernetes and Terraform across the fleet. Wrote Python.",
+  });
+  assert.equal(result.ok, true, JSON.stringify(result.error));
+  assert.ok(Array.isArray(result.data.skills));
+  assert.ok(result.data.skills.length > 0, "the vocabulary must recognise a real skill");
+});
+
+test("the master career profile is validated by the core", async (t) => {
+  const fixture = makeFixture();
+  const bridge = startBridge(fixture.root);
+  t.after(() => {
+    bridge.stop();
+    fixture.cleanup();
+  });
+
+  const absent = await bridge.call("profile", { action: "masterProfile" });
+  assert.equal(absent.ok, true, JSON.stringify(absent.error));
+  assert.equal(absent.data.available, false, "there is no profile yet");
+  assert.match(absent.data.message, /no master career profile/);
+});
+
+test("the phonebook is read, exported and joined against a company", async (t) => {
+  const fixture = makeFixture();
+  const bridge = startBridge(fixture.root);
+  t.after(() => {
+    bridge.stop();
+    fixture.cleanup();
+  });
+
+  fs.writeFileSync(
+    path.join(fixture.root, "data", "contacts.tsv"),
+    "Dana Recruiter\tAcme\trecruiter\ttalent\t+1-555-0100\tdana@acme.example\thttps://linkedin.com/in/dana\t1\tscreen\n",
+    "utf-8",
+  );
+  fs.writeFileSync(
+    path.join(fixture.root, "data", "Connections.csv"),
+    "First Name,Last Name,URL,Email Address,Company,Position,Connected On\nSam,Peer,https://linkedin.com/in/sam,,Acme,Engineer,01 Jan 2024\n",
+    "utf-8",
+  );
+
+  const list = await bridge.call("contacts", { action: "list" });
+  assert.equal(list.ok, true, JSON.stringify(list.error));
+  assert.equal(list.data.total, 1, "the contact must be read");
+  assert.equal(list.data.contacts[0].name, "Dana Recruiter");
+
+  const exported = await bridge.call("contacts", { action: "export", write: true });
+  assert.equal(exported.ok, true, JSON.stringify(exported.error));
+  const vcf = fs.readFileSync(path.join(fixture.root, "output", "contacts.vcf"), "utf-8");
+  assert.match(vcf, /BEGIN:VCARD/, "the export must be a vCard");
+  assert.match(vcf, /Dana Recruiter/, "the contact must be in it");
+
+  const warm = await bridge.call("contacts", { action: "linkedin", company: "Acme" });
+  assert.equal(warm.ok, true, JSON.stringify(warm.error));
+  assert.ok(Array.isArray(warm.data.targets), "the warm-intro answer must be a list");
+});
+
+test("a pasted invite is matched to a tracker row", async (t) => {
+  const fixture = makeFixture();
+  const bridge = startBridge(fixture.root);
+  t.after(() => {
+    bridge.stop();
+    fixture.cleanup();
+  });
+
+  const result = await bridge.call("contacts", {
+    action: "inviteMatch",
+    invite: "Interview invitation — Acme — Platform Engineer — Monday 10:00",
+  });
+  assert.equal(result.ok, true, JSON.stringify(result.error));
+  assert.ok(result.data.classification, "the matcher must classify the message");
+  assert.ok(Array.isArray(result.data.candidates), "and rank the candidates");
+});
+
+test("a broken portal is repaired only for a company name that is safe to pass", async (t) => {
+  const fixture = makeFixture();
+  const bridge = startBridge(fixture.root);
+  t.after(() => {
+    bridge.stop();
+    fixture.cleanup();
+  });
+
+  // A name with a shell metacharacter is refused BEFORE anything is spawned.
+  const unsafe = await bridge.call("run", {
+    kind: "fix-portal",
+    input: 'Acme"; rm -rf /',
+    cliId: "claude",
+  });
+  assert.equal(unsafe.ok, false);
+  assert.equal(unsafe.error.code, "bad-request");
+});
+
+test("the intake lists the documents it found, and proposes nothing by itself", async (t) => {
+  const fixture = makeFixture();
+  const bridge = startBridge(fixture.root);
+  t.after(() => {
+    bridge.stop();
+    fixture.cleanup();
+  });
+
+  const result = await bridge.call("profile", { action: "intake" });
+  assert.equal(result.ok, true, JSON.stringify(result.error));
+  assert.ok(Array.isArray(result.data.sources), "the intake must list what it found");
+  // Nothing was written to the profile.
+  const profile = fs.readFileSync(path.join(fixture.root, "config", "profile.yml"), "utf-8");
+  assert.ok(
+    !profile.includes("intake"),
+    "the intake proposes; it must not write the profile",
+  );
+});
+
+test("every core maintenance tool is reachable and reports what it did", async (t) => {
+  const fixture = makeFixture();
+  const bridge = startBridge(fixture.root);
+  t.after(() => {
+    bridge.stop();
+    fixture.cleanup();
+  });
+
+  fs.writeFileSync(
+    path.join(fixture.root, "portals.yml"),
+    ["tracked_companies:", "  - name: Acme", "    careers_url: https://boards.greenhouse.io/acme", ""].join("\n"),
+    "utf-8",
+  );
+
+  // The slug repair is the one tool whose work needs the network, so what is
+  // asserted is its CONTRACT: it answers, it says what it did, and a preview
+  // writes nothing.
+  const before = fs.readFileSync(path.join(fixture.root, "portals.yml"), "utf-8");
+  const result = await bridge.call("maintenance", { tool: "fixSlugs" });
+  assert.equal(result.data.tool, "fixSlugs");
+  assert.equal(result.data.apply, false, "a preview changes nothing");
+  assert.equal(
+    fs.readFileSync(path.join(fixture.root, "portals.yml"), "utf-8"),
+    before,
+    "a preview must leave portals.yml byte-identical",
+  );
+});

@@ -37,8 +37,11 @@ fn list_card(ui: &mut egui::Ui, app: &mut CareerOpsApp, t: Palette) {
         });
         ui.add_space(8.0);
         let Some(documents) = app.state.documents.clone() else {
-            ui.spinner();
-            ui.label("Reading output/…");
+            ui.label(
+                RichText::new("output/ has not been read yet.")
+                    .text_style(theme::meta())
+                    .color(t.fg_muted),
+            );
             return;
         };
         if documents.is_empty() {

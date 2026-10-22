@@ -153,6 +153,13 @@ async function runOne(params, ctx) {
     );
   }
 
+  if (kind === "fix-portal" && !isShellSafeCompanyName(input)) {
+    throw new BridgeError(
+      "bad-request",
+      "That company name has characters I can't safely pass to the portal checker — rename it in portals.yml first.",
+    );
+  }
+
   const resolved = resolveCliOrFallback(requestedCliId);
   if (!resolved) {
     const err = cliUnavailableError(requestedCliId);
@@ -183,13 +190,6 @@ async function runOne(params, ctx) {
     throw new BridgeError(
       "incomplete-checkout",
       `This needs a complete career-ops checkout (${required}). CAREER_OPS_ROOT has data only — point it at a full checkout.`,
-    );
-  }
-
-  if (kind === "fix-portal" && !isShellSafeCompanyName(input)) {
-    throw new BridgeError(
-      "bad-request",
-      "That company name has characters I can't safely pass to the portal checker — rename it in portals.yml first.",
     );
   }
 

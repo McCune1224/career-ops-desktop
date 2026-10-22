@@ -1513,3 +1513,111 @@ fn the_documents_screen_lists_what_was_generated() {
         "the documents screen must offer the archive"
     );
 }
+
+// ─── the rest of the loop ──────────────────────────────────────────────────
+
+#[test]
+fn the_report_screen_offers_the_screening_pack_and_a_liveness_check() {
+    let mut app = app_with(&all_fixtures());
+    app.screen = Screen::Report("2".into());
+    app.state.report =
+        Some(serde_json::from_value(report()).expect("report fixture decodes"));
+    let harness = harness_for(app, |ui, app| views::report::ui(ui, app));
+
+    assert!(shows(&harness, "Screening pack"));
+    assert!(shows(&harness, "Is it still live?"));
+    assert!(shows(&harness, "Keyword coverage"));
+    assert!(shows(&harness, "Score levers"));
+    assert!(shows(&harness, "Company history"));
+}
+
+#[test]
+fn the_pipeline_screen_offers_a_compare() {
+    let mut app = app_with(&all_fixtures());
+    app.pipeline_view.selected = vec!["1".into(), "2".into()];
+    let harness = harness_for(app, |ui, app| views::pipeline::ui(ui, app));
+    assert!(shows(&harness, "Compare the picked rows"));
+}
+
+#[test]
+fn the_run_screen_shows_what_has_been_spent() {
+    let mut app = app_with(&all_fixtures());
+    app.state.usage = Some(career_ops_desktop::model::Usage {
+        windows: vec![
+            career_ops_desktop::model::UsageWindow {
+                name: "window5h".into(),
+                hours: 5,
+                runs: 2,
+                tokens: 12_000.0,
+                usd: 0.42,
+            },
+            career_ops_desktop::model::UsageWindow {
+                name: "window7d".into(),
+                hours: 168,
+                runs: 9,
+                tokens: 99_000.0,
+                usd: 3.1,
+            },
+        ],
+        computed_at: 0.0,
+        runs: 9,
+    });
+    let harness = harness_for(app, |ui, app| views::run::ui(ui, app));
+    assert!(shows(&harness, "What you have spent"));
+    assert!(shows(&harness, "5h:"));
+    assert!(shows(&harness, "168h:"));
+}
+
+#[test]
+fn the_cv_screen_offers_the_import_and_the_master_profile() {
+    let app = app_with(&all_fixtures());
+    let harness = harness_for(app, |ui, app| views::cv::ui(ui, app));
+    assert!(shows(&harness, "Import from documents/"));
+    assert!(shows(&harness, "Master career profile"));
+}
+
+#[test]
+fn the_config_screen_offers_the_language_and_the_checklist() {
+    let app = app_with(&all_fixtures());
+    let harness = harness_for(app, |ui, app| views::config::ui(ui, app));
+    assert!(shows(&harness, "Language and market"));
+    assert!(shows(&harness, "For a later session"));
+    assert!(shows(&harness, "Plugins"));
+    assert!(shows(&harness, "Maintenance"));
+}
+
+#[test]
+fn the_portals_screen_offers_the_liveness_and_the_reposts() {
+    let app = app_with(&all_fixtures());
+    let harness = harness_for(app, |ui, app| views::portals::ui(ui, app));
+    assert!(shows(&harness, "Re-listed roles"));
+    assert!(shows(&harness, "JD without a browser"));
+    assert!(shows(&harness, "Why was this missed?"));
+    assert!(shows(&harness, "New this week"));
+}
+
+#[test]
+fn the_outcomes_screen_offers_the_outreach_and_the_share() {
+    let app = app_with(&all_fixtures());
+    let harness = harness_for(app, |ui, app| views::outcomes::ui(ui, app));
+    assert!(shows(&harness, "Outreach"));
+    assert!(shows(&harness, "Do I know anyone?"));
+    assert!(shows(&harness, "Match it"));
+    assert!(shows(&harness, "Share a hire"));
+    assert!(shows(&harness, "Record an outcome"));
+}
+
+#[test]
+fn a_missing_engine_checkout_is_one_actionable_sentence() {
+    use career_ops_desktop::code_root;
+    // A directory with no checkout beside it: the failure is the SENTENCE, and
+    // nothing else.
+    let nowhere = std::env::temp_dir().join("career-ops-no-such-parent").join("client");
+    let error = code_root::resolve(None, &nowhere).expect_err("there is no checkout there");
+    assert_eq!(error, code_root::ACTIONABLE);
+    assert!(
+        !error.contains(". "),
+        "the failure must be one sentence, not two: {error}"
+    );
+    assert!(error.contains("CAREER_OPS_CODE_ROOT"), "and it must say what to do");
+}

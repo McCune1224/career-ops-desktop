@@ -219,6 +219,43 @@ fn checks_card(ui: &mut egui::Ui, app: &mut CareerOpsApp, report: &crate::model:
                 }
             }
         });
+        ui.add_space(6.0);
+        ui.horizontal_wrapped(|ui| {
+            if crate::views::ghost_button(ui, "Screening pack").clicked() {
+                app.load_questions(&report.n);
+            }
+            if let Some(url) = report.posting_url.clone() {
+                if crate::views::ghost_button(ui, "Is it still live?").clicked() {
+                    app.check_liveness(&url);
+                }
+            }
+        });
+        if let Some(pack) = app.state.questions.clone() {
+            ui.add_space(6.0);
+            ui.label(
+                RichText::new(pack)
+                    .monospace()
+                    .text_style(theme::meta())
+                    .color(t.fg_muted),
+            );
+        }
+        if let Some(liveness) = app.state.liveness.clone() {
+            ui.add_space(6.0);
+            ui.horizontal_wrapped(|ui| {
+                crate::views::pill(
+                    ui,
+                    &liveness.verdict,
+                    if liveness.verdict == "active" { t.good } else { t.warn },
+                );
+                ui.label(
+                    RichText::new(
+                        "an unreadable posting is unconfirmed, never closed",
+                    )
+                    .text_style(theme::meta())
+                    .color(t.fg_muted),
+                );
+            });
+        }
         if let Some(result) = app.state.analysis.clone() {
             ui.add_space(8.0);
             ui.label(

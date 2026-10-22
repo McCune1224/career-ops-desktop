@@ -24,7 +24,25 @@ fn checks_card(ui: &mut egui::Ui, app: &mut CareerOpsApp, t: Palette) {
             if crate::views::ghost_button(ui, "Skill gaps").clicked() {
                 app.load_skill_gaps();
             }
+            if crate::views::ghost_button(ui, "Compare to cv.md").clicked() {
+                app.check_cv_structure();
+            }
+            if crate::views::ghost_button(ui, "Import from documents/").clicked() {
+                app.run_op("profile", serde_json::json!({ "action": "intake" }));
+            }
+            if crate::views::ghost_button(ui, "Master career profile").clicked() {
+                app.run_op("profile", serde_json::json!({ "action": "masterProfile" }));
+            }
         });
+        if !app.state.notice.is_empty() {
+            ui.add_space(6.0);
+            ui.label(
+                RichText::new(&app.state.notice)
+                    .monospace()
+                    .text_style(theme::meta())
+                    .color(t.fg_muted),
+            );
+        }
         if let Some(check) = app.state.cv_check.clone() {
             ui.add_space(6.0);
             ui.horizontal_wrapped(|ui| {

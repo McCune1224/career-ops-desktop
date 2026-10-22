@@ -18,6 +18,8 @@ pub fn ui(ui: &mut egui::Ui, app: &mut CareerOpsApp) {
         |ui, app| {
             form_card(ui, app, t);
             ui.add_space(14.0);
+            sensor_card(ui, app, t);
+            ui.add_space(14.0);
             progress_card(ui, app, t);
         },
     );
@@ -245,6 +247,38 @@ fn form_card(ui: &mut egui::Ui, app: &mut CareerOpsApp, t: Palette) {
                 }
             });
         }
+    });
+}
+
+/// What this client has spent, in the windows the account meters.
+fn sensor_card(ui: &mut egui::Ui, app: &mut CareerOpsApp, t: Palette) {
+    theme::card(ui, t).show(ui, |ui| {
+        crate::views::card_title(ui, "What you have spent", |ui| {
+            if crate::views::ghost_button(ui, "Refresh").clicked() {
+                app.load_usage_sensor();
+            }
+        });
+        ui.add_space(8.0);
+        let Some(usage) = app.state.usage.clone() else {
+            ui.label(
+                RichText::new("No run has been recorded yet.")
+                    .text_style(theme::meta())
+                    .color(t.fg_muted),
+            );
+            return;
+        };
+        ui.horizontal_wrapped(|ui| {
+            for window in &usage.windows {
+                crate::views::pill(
+                    ui,
+                    &format!(
+                        "{}h: {} tokens · ${:.4} over {} run(s)",
+                        window.hours, window.tokens as i64, window.usd, window.runs
+                    ),
+                    t.accent,
+                );
+            }
+        });
     });
 }
 

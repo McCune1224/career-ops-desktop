@@ -93,7 +93,7 @@ export async function handle(params) {
  */
 function runInvite(script, invite, cwd) {
   return new Promise((resolve) => {
-    const child = spawn(process.execPath, [script, "--json"], {
+    const child = spawn(process.execPath, [script], {
       cwd,
       env: { ...process.env },
       stdio: ["pipe", "pipe", "pipe"],

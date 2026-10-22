@@ -45,6 +45,8 @@ pub fn ui(ui: &mut egui::Ui, app: &mut CareerOpsApp) {
             ui.add_space(14.0);
             coverage_card(ui, app, t);
             ui.add_space(14.0);
+            checks_card(ui, app, t);
+            ui.add_space(14.0);
             discover_card(ui, app, t);
         },
     );
@@ -60,8 +62,11 @@ fn whats_new_card(ui: &mut egui::Ui, app: &mut CareerOpsApp, t: Palette) {
         });
         ui.add_space(8.0);
         let Some(whats) = app.state.whats_new.clone() else {
-            ui.spinner();
-            ui.label("Reading the scan history…");
+            ui.label(
+                RichText::new("The scan history has not been read yet.")
+                    .text_style(theme::meta())
+                    .color(t.fg_muted),
+            );
             return;
         };
         ui.label(
@@ -252,6 +257,70 @@ fn explain_coverage(app: &mut CareerOpsApp) {
         }
         Err(e) => app.state.fail(format!("could not explain the miss: {e}")),
     }
+}
+
+/// The checks: a re-listed role, a posting's liveness, a JD without a browser.
+fn checks_card(ui: &mut egui::Ui, app: &mut CareerOpsApp, t: Palette) {
+    theme::card(ui, t).show(ui, |ui| {
+        crate::views::card_title(ui, "Checks", |ui| {
+            ui.label(
+                RichText::new("the network is only used by the liveness check")
+                    .text_style(theme::meta())
+                    .color(t.fg_muted),
+            );
+        });
+        ui.add_space(8.0);
+        ui.horizontal_wrapped(|ui| {
+            if crate::views::ghost_button(ui, "Re-listed roles").clicked() {
+                match app
+                    .backend
+                    .call("portals", serde_json::json!({ "action": "reposts" }))
+                {
+                    Ok(value) => {
+                        let count = value
+                            .get("clusters")
+                            .and_then(serde_json::Value::as_array)
+                            .map(|c| c.len())
+                            .unwrap_or(0);
+                        app.state.say(format!("{count} re-listed role(s)"));
+                    }
+                    Err(e) => app.state.fail(format!("could not check the history: {e}")),
+                }
+            }
+        });
+        ui.add_space(6.0);
+        ui.horizontal_wrapped(|ui| {
+            ui.add(
+                egui::TextEdit::singleline(&mut app.coverage.url)
+                    .desired_width(260.0)
+                    .hint_text("a posting URL to check"),
+            );
+            if crate::views::ghost_button(ui, "Live?").clicked() {
+                let url = app.coverage.url.clone();
+                app.check_liveness(&url);
+            }
+            if crate::views::ghost_button(ui, "JD without a browser").clicked() {
+                let url = app.coverage.url.clone();
+                app.run_op("liveness", serde_json::json!({ "action": "fetchJd", "url": url }));
+            }
+        });
+        if let Some(liveness) = app.state.liveness.clone() {
+            ui.add_space(6.0);
+            crate::views::pill(
+                ui,
+                &liveness.verdict,
+                if liveness.verdict == "active" { t.good } else { t.warn },
+            );
+        }
+        if !app.state.notice.is_empty() {
+            ui.add_space(6.0);
+            ui.label(
+                RichText::new(&app.state.notice)
+                    .text_style(theme::meta())
+                    .color(t.fg_muted),
+            );
+        }
+    });
 }
 
 /// Find a company's board from its name.

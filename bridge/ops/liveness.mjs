@@ -26,7 +26,15 @@ export async function handle(params) {
     if (params.record !== true) args.push("--no-record");
     const res = await runCoreScript("check-liveness", args, { timeout: 120_000 });
     const text = res.output;
-    const verdict = /active/i.test(text) ? "active" : /expired/i.test(text) ? "expired" : "uncertain";
+    // The summary line says "N active  M expired  U uncertain", so a word
+    // match on the whole output reports "active" for every posting. The
+    // verdict is the one on THIS url's own line.
+    const line = text.split("\n").find((row) => row.includes(url)) ?? "";
+    const verdict = /\bexpired\b/i.test(line)
+      ? "expired"
+      : /\bactive\b/i.test(line)
+        ? "active"
+        : "uncertain";
     return { ok: res.code === 0, verdict, output: text };
   }
 

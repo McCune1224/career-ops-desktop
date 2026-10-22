@@ -81,7 +81,11 @@ changes it. Toggle the window to floating, or maximize it, and the layout follow
 | **Run** | Evaluate a pasted JD or URL, tailor the CV, or draft a cover letter, with the web app's streamed progress (text, tool calls, status lines, errors, the saved report number). |
 | **CV** | Edit `cv.md` with a live preview; save atomically with a backup. |
 | **Follow-ups** | What the core's cadence calculator says is due, the logged history, and a dialog that appends to `data/follow-ups.md` under the same lock the web route uses. |
-| **Config** | Choose the AI CLI, tune the follow-up cadence, edit the candidate details in `config/profile.yml`, and see which data root and checkout the app is reading. |
+| **Documents** | Every generated CV and cover letter, and the posting archive that keeps them with the report they belong to. |
+| **Portals** | What the last scan found, the watched boards and their audit, why a posting you found by hand was missed, and a search for a company's board. |
+| **Interview** | The story bank with its provenance verdict, the match of a story to a question, and the week's gaps. |
+| **Outcomes** | What happened to an application, who is still silent, the salary gap, the phonebook and the warm-introduction lookup, and the one thing a hire may share. |
+| **Config** | Choose the AI CLI, tune the follow-up cadence, edit the candidate details in `config/profile.yml`, check the profile, list the plugins, run the maintenance tools, read the language and market set, queue a request for later, and see which data root and checkout the app is reading. |
 
 [CAPABILITY-MATRIX.md](CAPABILITY-MATRIX.md) maps every one of those to the web
 route it replaces, the desktop surface that implements it, and the test that
@@ -99,21 +103,27 @@ Two more documents turn the whole product, not just this client, into a backlog:
 
 ## Named gaps
 
-Deliberately not built in this version. Each is a real web surface; a partial
-version would be worse than none, because the web app's guards exist to stop
-exactly the half-done cases.
+Deliberately not built. Each needs a browser, a scheduler or an OS-level
+credential store — things this client refuses to embed. The CLI remains the place
+to do them, and `FEATURES.md` records every one as `gap` with the reason.
 
-- **Apply form prefill** — `/apply`, `/api/apply/*`.
+- **Apply form prefill** — `/apply`, `/api/apply/*`. It drives a real browser and
+  fills a real form.
 - **Agent chat** — the assistant console, `/api/assistant`, chat history.
-- **Explore and scan** — `/explore`, `/api/explore*`, "new this week".
-- **CV studio** — `/api/cv-studio/[n]`.
-- **Scheduled scans** — `/scheduled-scans`, `/api/scheduled-jobs*`, `/api/scheduler`.
+- **Scanning and explore** — `/explore`, `/api/explore*`, the scanners. The
+  supply loop is the CLI's; this client shows what a scan already found.
+- **CV studio** — `/api/cv-studio/[n]`. Per-block CV editing is a deferred
+  surface (E04-S10).
+- **Scheduled scans** — `/scheduled-scans`, `/api/scheduled-jobs*`. It installs
+  OS-level schedulers.
 - **Analytics** — `/analytics`, `/api/stats`, `/api/patterns`, the Sankey.
-- **Documents browser**, **Portals health check**, **offer compare**, **tracker
-  row deletion**, **memory / personalization editing** — outside the Goal's
-  daily loop.
 - **PDF pages rendered inside the window** — a browser capability. The PDFs are
   handed to your own viewer instead (DECISIONS.md D-6).
+
+Everything else the web app offers is here: the tracker and its repairs, the
+report with its checks, the CV and its template, cover letters with a tone,
+follow-ups, the documents, the watched boards and their audit, the interview
+half, outcomes and outreach, and the core's own maintenance tools.
 
 ---
 

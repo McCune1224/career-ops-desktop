@@ -28,6 +28,8 @@ pub fn ui(ui: &mut egui::Ui, app: &mut CareerOpsApp) {
             salary_card(ui, app, t);
             ui.add_space(14.0);
             contacts_card(ui, app, t);
+            ui.add_space(14.0);
+            share_card(ui, app, t);
         },
     );
 }
@@ -188,6 +190,78 @@ fn contacts_card(ui: &mut egui::Ui, app: &mut CareerOpsApp, t: Palette) {
                 }
             });
             ui.add_space(3.0);
+        }
+    });
+}
+
+/// The outreach half: the warm introduction, the invite, the export.
+fn share_card(ui: &mut egui::Ui, app: &mut CareerOpsApp, t: Palette) {
+    theme::card(ui, t).show(ui, |ui| {
+        crate::views::card_title(ui, "Outreach", |ui| {
+            ui.label(
+                RichText::new("offline; nothing is ever sent")
+                    .text_style(theme::meta())
+                    .color(t.fg_muted),
+            );
+        });
+        ui.add_space(8.0);
+        ui.horizontal_wrapped(|ui| {
+            ui.add(
+                egui::TextEdit::singleline(&mut app.outreach_company)
+                    .desired_width(180.0)
+                    .hint_text("company"),
+            );
+            if crate::views::ghost_button(ui, "Do I know anyone?").clicked() {
+                let company = app.outreach_company.clone();
+                app.run_op(
+                    "contacts",
+                    serde_json::json!({ "action": "linkedin", "company": company }),
+                );
+            }
+            if crate::views::ghost_button(ui, "Export the phonebook").clicked() {
+                app.run_op("contacts", serde_json::json!({ "action": "export" }));
+            }
+        });
+        ui.add_space(6.0);
+        ui.horizontal_wrapped(|ui| {
+            ui.add(
+                egui::TextEdit::singleline(&mut app.outreach_invite)
+                    .desired_width(320.0)
+                    .hint_text("paste an interview invite"),
+            );
+            if crate::views::ghost_button(ui, "Match it").clicked() {
+                let invite = app.outreach_invite.clone();
+                app.run_op(
+                    "contacts",
+                    serde_json::json!({ "action": "inviteMatch", "invite": invite }),
+                );
+            }
+        });
+        ui.add_space(6.0);
+        ui.horizontal_wrapped(|ui| {
+            ui.label(
+                RichText::new("Share a hire")
+                    .text_style(theme::meta())
+                    .color(t.fg_muted),
+            );
+            ui.add(
+                egui::TextEdit::singleline(&mut app.outreach_report)
+                    .desired_width(60.0)
+                    .hint_text("report #"),
+            );
+            if crate::views::ghost_button(ui, "Draft it").clicked() {
+                let report = app.outreach_report.trim().parse::<i64>().unwrap_or(0);
+                app.run_op("outcomes", serde_json::json!({ "action": "hiredShare", "report": report }));
+            }
+        });
+        if !app.state.notice.is_empty() {
+            ui.add_space(6.0);
+            ui.label(
+                RichText::new(&app.state.notice)
+                    .monospace()
+                    .text_style(theme::meta())
+                    .color(t.fg_muted),
+            );
         }
     });
 }

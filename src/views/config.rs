@@ -31,6 +31,10 @@ pub fn ui(ui: &mut egui::Ui, app: &mut CareerOpsApp) {
             ui.add_space(12.0);
             theme::card(ui, t).show(ui, |ui| maintenance_section(ui, app, t));
             ui.add_space(12.0);
+            theme::card(ui, t).show(ui, |ui| language_section(ui, app, t));
+            ui.add_space(12.0);
+            theme::card(ui, t).show(ui, |ui| inbox_section(ui, app, t));
+            ui.add_space(12.0);
             theme::card(ui, t).show(ui, |ui| install_section(ui, app, t));
         },
     );
@@ -304,6 +308,101 @@ fn profile_check_section(ui: &mut egui::Ui, app: &mut CareerOpsApp, t: Palette) 
                 );
             }
         });
+    }
+}
+
+/// The output language and the market mode set.
+fn language_section(ui: &mut egui::Ui, app: &mut CareerOpsApp, t: Palette) {
+    heading(ui, "Language and market", t);
+    ui.horizontal_wrapped(|ui| {
+        if ghost_button(ui, "Read it").clicked() {
+            match app
+                .backend
+                .call("profile", serde_json::json!({ "action": "state" }))
+            {
+                Ok(value) => {
+                    let language = value.get("language").cloned().unwrap_or_default();
+                    let output = language
+                        .get("output")
+                        .and_then(serde_json::Value::as_str)
+                        .unwrap_or("en");
+                    let modes = language
+                        .get("modesDir")
+                        .map(|v| {
+                            if let Some(list) = v.as_array() {
+                                list.iter()
+                                    .filter_map(|x| x.as_str())
+                                    .collect::<Vec<_>>()
+                                    .join(", ")
+                            } else {
+                                v.as_str().unwrap_or("modes").to_string()
+                            }
+                        })
+                        .unwrap_or_else(|| "modes".to_string());
+                    app.state
+                        .say(format!("output {output} · market {modes}"));
+                }
+                Err(e) => app.state.fail(format!("could not read the language: {e}")),
+            }
+        }
+        if ghost_button(ui, "Turn the personalization on").clicked() {
+            app.run_op(
+                "profile",
+                serde_json::json!({ "action": "state" }),
+            );
+        }
+    });
+    if !app.state.notice.is_empty() {
+        ui.label(
+            RichText::new(&app.state.notice)
+                .monospace()
+                .text_style(theme::meta())
+                .color(t.fg_muted),
+        );
+    }
+}
+
+/// The checklist of requests for a later session.
+fn inbox_section(ui: &mut egui::Ui, app: &mut CareerOpsApp, t: Palette) {
+    heading(ui, "For a later session", t);
+    ui.horizontal_wrapped(|ui| {
+        ui.add(
+            egui::TextEdit::singleline(&mut app.inbox_request)
+                .desired_width(260.0)
+                .hint_text("what to do later"),
+        );
+        if primary_button(ui, "Queue it", !app.inbox_request.trim().is_empty()).clicked() {
+            let request = app.inbox_request.clone();
+            app.run_op(
+                "agent-inbox",
+                serde_json::json!({ "action": "add", "request": request }),
+            );
+            app.inbox_request.clear();
+        }
+        if ghost_button(ui, "Read the checklist").clicked() {
+            match app
+                .backend
+                .call("agent-inbox", serde_json::json!({ "action": "list" }))
+            {
+                Ok(value) => {
+                    let items = value
+                        .get("items")
+                        .and_then(serde_json::Value::as_array)
+                        .cloned()
+                        .unwrap_or_default();
+                    app.state.say(format!("{} item(s) queued", items.len()));
+                }
+                Err(e) => app.state.fail(format!("could not read the checklist: {e}")),
+            }
+        }
+    });
+    if !app.state.notice.is_empty() {
+        ui.label(
+            RichText::new(&app.state.notice)
+                .monospace()
+                .text_style(theme::meta())
+                .color(t.fg_muted),
+        );
     }
 }
 

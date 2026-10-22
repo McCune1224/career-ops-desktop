@@ -72,7 +72,12 @@ export async function resolve(specifier, context, nextResolve) {
   // untouched: an engine module's own imports already resolve from its own
   // directory, and re-parenting them would move `web/node_modules` out of
   // reach.
-  if (!specifier.startsWith(".") && !specifier.startsWith("/") && !specifier.startsWith("node:")) {
+  // A specifier with a scheme (node:, file:, data:, …) is already resolved.
+  const isBare =
+    !specifier.startsWith(".") &&
+    !specifier.startsWith("/") &&
+    !/^[a-z][a-z0-9+.-]*:/i.test(specifier);
+  if (isBare) {
     try {
       return await nextResolve(specifier, context);
     } catch {

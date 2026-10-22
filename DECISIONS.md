@@ -604,3 +604,65 @@ and a screen of their own would be one more place to look for a button that
 only matters when something has already gone wrong. They sit in Config next to
 the plugins and the profile check, and each one proposes before it acts: the
 first click shows what the script would do, the second applies it.
+
+---
+
+## D-17. Every remaining capability is a bridge op over the core, not a screen of its own
+
+**Decision.** The capabilities M3 to M5 added — the quiet companies, the
+recruiting friction, the salary gap, the negotiation points, the story bank,
+the digest, the portals audit and its coverage check, what is new, the
+re-listed roles, the agent inbox, the plugin list, the phonebook, the invite
+matcher, the outcome archive, the document list — are each a bridge op that
+runs the CORE's own script or calls the WEB app's own module, plus a small
+surface on an existing screen.
+
+**Why not a screen each.** A capability that is a question with an answer does
+not need a screen; it needs a button and a sentence. `views/maintenance.rs`
+exists as a module of tools and no longer as a screen: the eight repair tools
+sit in Config, next to the plugins and the profile check, because a screen of
+its own would be one more place to look for a button that only matters when
+something has already gone wrong. The nav stayed at ten entries (D-16) for the
+same reason: a nav that grows with every capability stops being a map.
+
+**What each op does.** It names ONE core script or ONE engine module, runs it
+with the flags the script documents, and returns the script's own words. The
+client adds no rule. Where the core has a JSON mode the op returns it; where it
+prints prose the op returns the prose and the screen shows it verbatim.
+
+**The one place a prompt is the client's** is D-15, and it is still one place.
+
+## D-18. What a row's acceptance check is
+
+**Decision.** A `done` row's Acceptance cell names the test that proves it, in
+backticks. `tests/acceptance.test.mjs` reads `FEATURES.md` and fails when a row
+outside the deferred epic is `missing` or `partial`, or when a row names a check
+this repository does not contain.
+
+**Why a test name rather than prose.** Prose acceptance cannot be run. A row
+that says "the card shows this company's history" is an opinion until something
+executes; a row that names `a company history joins the tracker, the follow-ups
+and the status log` is a claim `node --test` settles. The gate is what makes
+"the inventory is not lying" checkable rather than asserted.
+
+**What the gate does not prove.** That the check is a GOOD check. A test named
+in a row runs, and it asserts what its name says; whether the name is the right
+question is a review question, and the walkthrough (D-13) is where it gets
+answered against real data.
+
+## D-19. The three CLI measurements stay recorded, not fixed
+
+The three CLI limits are unchanged and unfixed, as the Goal requires:
+
+- `pi` is blocked by an expired API key. Nothing to fix in the app.
+- `hermes` buffers its output and a full evaluation exceeded the shared 740 s
+  budget, silently.
+- `opencode2` exits on its own at 300 s, before emitting a report.
+
+`killMsForKind()` was not raised and the shared run budget was not extended.
+The bar for a CLI is *driveable and honest*, not *guaranteed to finish*, and
+every acceptance check added here is provable without a completed model
+response: the stub-CLI pattern in `tests/desktop-run-e2e.test.mjs` speaks the
+real protocol, and the rest of the suite asserts against the files the core
+wrote. A limit that belongs to the CLI or to the account is recorded in
+`README.md` and left where it is.

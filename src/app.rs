@@ -107,6 +107,10 @@ pub struct AppState {
 
     /// What is running: the client, the bridge protocol and the engine release.
     pub version: Option<Version>,
+    /// What the screening pack for one application says.
+    pub questions: Option<String>,
+    /// The line a screen shows after a one-shot op answered.
+    pub notice: String,
     /// The last message for the user, and whether it is an error.
     pub message: Option<(String, bool)>,
     /// True while a request is in flight.
@@ -429,6 +433,12 @@ pub struct CareerOpsApp {
     pub bulk_state: String,
     /// The free-text search query.
     pub find_query: String,
+    /// The outreach form: a company, an invite and a report to share.
+    pub outreach_company: String,
+    pub outreach_invite: String,
+    pub outreach_report: String,
+    /// The request queued for a later session.
+    pub inbox_request: String,
     /// egui's clock at the last frame, so an event folded outside a `Ui` still
     /// gets a timestamp.
     pub run_now: f64,
@@ -456,6 +466,10 @@ impl CareerOpsApp {
             shortlist: Vec::new(),
             bulk_state: "Applied".to_string(),
             find_query: String::new(),
+            outreach_company: String::new(),
+            outreach_invite: String::new(),
+            outreach_report: String::new(),
+            inbox_request: String::new(),
             run_now: 0.0,
         }
     }
@@ -993,6 +1007,51 @@ impl CareerOpsApp {
         self.analysis_action("upskill", "");
     }
 
+    /// Compare a set of tracker rows.
+    pub fn analysis_action_ids(&mut self, action: &str, ids: &[String]) {
+        let params = serde_json::json!({ "action": action, "ids": ids });
+        match self.backend.call("analysis", params) {
+            Ok(value) => {
+                let body = value
+                    .get("columns")
+                    .and_then(serde_json::Value::as_array)
+                    .map(|columns| {
+                        columns
+                            .iter()
+                            .map(|column| {
+                                let company = column.get("company").and_then(|v| v.as_str()).unwrap_or("");
+                                let role = column.get("role").and_then(|v| v.as_str()).unwrap_or("");
+                                let score = column.get("score").and_then(|v| v.as_str()).unwrap_or("");
+                                let fields = column
+                                    .get("fields")
+                                    .and_then(|v| v.as_array())
+                                    .map(|f| {
+                                        f.iter()
+                                            .filter_map(|row| {
+                                                let label = row.get("label")?.as_str()?;
+                                                let value = row.get("value")?.as_str()?;
+                                                Some(format!("{label}: {value}"))
+                                            })
+                                            .collect::<Vec<_>>()
+                                            .join("; ")
+                                    })
+                                    .unwrap_or_default();
+                                format!("{company} — {role} ({score})\n  {fields}")
+                            })
+                            .collect::<Vec<_>>()
+                            .join("\n")
+                    })
+                    .unwrap_or_default();
+                self.state.analysis = Some(Analysis {
+                    action: action.to_string(),
+                    title: "Compare".to_string(),
+                    body,
+                });
+            }
+            Err(e) => self.state.fail(format!("could not compare: {e}")),
+        }
+    }
+
     /// Ask for one analysis and keep what came back.
     ///
     /// The argument is the report number for a per-report analysis and the
@@ -1103,6 +1162,56 @@ impl CareerOpsApp {
             }
             Err(e) => self.state.fail(format!("could not clear the pin: {e}")),
         }
+    }
+
+    /// Read the screening pack for one application.
+    pub fn load_questions(&mut self, n: &str) {
+        match self
+            .backend
+            .call("questions", json!({ "action": "read", "n": n }))
+        {
+            Ok(value) => {
+                let available = value
+                    .get("available")
+                    .and_then(serde_json::Value::as_bool)
+                    .unwrap_or(false);
+                let answers = value.get("answers").cloned().unwrap_or(serde_json::Value::Null);
+                self.state.questions = Some(if available {
+                    serde_json::to_string_pretty(&answers).unwrap_or_default()
+                } else {
+                    String::from("There is no prepared pack for this application yet.")
+                });
+            }
+            Err(e) => self.state.fail(format!("could not read the screening pack: {e}")),
+        }
+    }
+
+    /// Run one one-shot op and keep the first line of what came back.
+    ///
+    /// The pattern every remaining capability shares: a button, a bridge op,
+    /// and the core's own sentence about what happened.
+    pub fn run_op(&mut self, op: &str, params: serde_json::Value) {
+        match self.backend.call(op, params) {
+            Ok(value) => {
+                let output = value
+                    .get("output")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("");
+                let message = output
+                    .lines()
+                    .find(|line| !line.trim().is_empty())
+                    .unwrap_or("done")
+                    .to_string();
+                self.state.notice = message.clone();
+                self.state.say(message);
+            }
+            Err(e) => self.state.fail(format!("{op} failed: {e}")),
+        }
+    }
+
+    /// Read this client's own spend into the two windows.
+    pub fn load_usage_sensor(&mut self) {
+        self.load_usage();
     }
 
     /// Ask what a run of this kind costs, from this client's own history.

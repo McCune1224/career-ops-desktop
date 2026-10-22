@@ -96,7 +96,7 @@ export async function handle(params) {
         "extracting competencies needs the career-ops scripts; this root has data only",
       );
     }
-    const { extractSkills } = await import(pathToFileUrl(script).href);
+    const { extractSkills } = await import(pathToFileUrl(script));
     const text = typeof params.body === "string" ? params.body : "";
     const skills = [...extractSkills(text)].sort();
     return { skills };
