@@ -77,7 +77,7 @@ changes it. Toggle the window to floating, or maximize it, and the layout follow
 |---|---|
 | **Today** | Tracker and inbox counts, what is due, setup state, a way into a run. |
 | **Pipeline** | Every tracker row, sortable by #/company/role/score/status/date, filterable by canonical status, by a score floor and by free text, with an inline status control that writes through `set-status.mjs`. Report and Posting actions per row. |
-| **Report** | The evaluation in full — score, legitimacy, verdict, the rendered markdown body — plus "Open the source posting" and "Open the tailored CV / cover letter". |
+| **Report** | The evaluation in full — score, legitimacy, verdict, the rendered markdown body — plus "Open the source posting", the tailored CV and cover letter, and an in-window **PDF preview** of either. |
 | **Run** | Evaluate a pasted JD or URL, tailor the CV, or draft a cover letter, with the web app's streamed progress (text, tool calls, status lines, errors, the saved report number). |
 | **CV** | Edit `cv.md` with a live preview; save atomically with a backup. |
 | **Follow-ups** | What the core's cadence calculator says is due, the logged history, and a dialog that appends to `data/follow-ups.md` under the same lock the web route uses. |
@@ -117,8 +117,6 @@ to do them, and `FEATURES.md` records every one as `gap` with the reason.
 - **Scheduled scans** — `/scheduled-scans`, `/api/scheduled-jobs*`. It installs
   OS-level schedulers.
 - **Analytics** — `/analytics`, `/api/stats`, `/api/patterns`, the Sankey.
-- **PDF pages rendered inside the window** — a browser capability. The PDFs are
-  handed to your own viewer instead (DECISIONS.md D-6).
 
 Everything else the web app offers is here: the tracker and its repairs, the
 report with its checks, the CV and its template, cover letters with a tone,
@@ -138,6 +136,9 @@ half, outcomes and outreach, and the core's own maintenance tools.
   `persist-evaluation-report.mjs`, `generate-pdf.mjs` or the same
   atomic-write-plus-backup helper the web routes use. See DECISIONS.md D-4.
 - **Never reimplements the engine.** The parity suite fails if it starts to.
+- **Never embeds a browser.** A PDF page is rasterised by poppler into pixels
+  and painted by egui; there is no HTML engine anywhere in the tree
+  (DECISIONS.md D-22, and `tests/no_webview.rs`).
 
 ---
 

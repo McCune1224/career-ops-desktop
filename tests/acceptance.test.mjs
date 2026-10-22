@@ -31,6 +31,7 @@ const TEST_FILES = [
   "tests/payloads.rs",
   "tests/live_data.rs",
   "tests/no_webview.rs",
+  "tests/pdf_preview.rs",
 ];
 
 function parseRows() {

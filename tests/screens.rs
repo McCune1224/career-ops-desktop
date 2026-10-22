@@ -1686,3 +1686,86 @@ fn the_run_screen_offers_the_outreach_mode() {
         "the outreach mode must be offered"
     );
 }
+
+// ─── the PDF preview ───────────────────────────────────────────────────────
+
+#[test]
+fn the_report_screen_offers_a_pdf_preview_and_the_viewer_opens_it() {
+    let mut app = app_with(&all_fixtures());
+    let app_ref = &mut app;
+    app_ref.screen = Screen::Report("2".into());
+    app_ref.state.report =
+        Some(serde_json::from_value(report()).expect("report fixture decodes"));
+    let harness = harness_for(app, |ui, app| views::report::ui(ui, app));
+
+    assert!(
+        shows(&harness, "Preview the CV"),
+        "the report screen must offer a preview of the tailored CV"
+    );
+    assert!(
+        shows(&harness, "Open the tailored CV (PDF)"),
+        "and the file itself, for the user's own viewer"
+    );
+}
+
+#[test]
+fn the_documents_screen_offers_a_preview_of_what_it_lists() {
+    let mut app = app_with(&all_fixtures());
+    app.state.documents = Some(vec![career_ops_desktop::model::Document {
+        filename: "cv-alex-acme-001.pdf".into(),
+        kind: "cv".into(),
+        date: Some("2026-01-02".into()),
+        report_id: Some("1".into()),
+        format: Some("pdf".into()),
+        id: "abc".into(),
+    }]);
+    let harness = harness_for(app, |ui, app| views::documents::ui(ui, app));
+    assert!(
+        shows(&harness, "Preview"),
+        "a listed document must be previewable in the window"
+    );
+}
+
+#[test]
+fn the_preview_card_says_which_page_it_is_showing() {
+    let mut app = app_with(&all_fixtures());
+    app.preview = Some(career_ops_desktop::app::PdfPreview {
+        path: "/fixture/output/cv-alex-acme-001.pdf".into(),
+        page: 1,
+        pages: 2,
+        texture: None,
+        error: None,
+    });
+    let harness = harness_for(app, |ui, app| {
+        // The card is drawn on its own here, so it adopts the token styles first
+        // — a screen draws through `frame`, which does the same.
+        let t = career_ops_desktop::theme::adopt(ui);
+        views::pdfview::card(ui, app, t);
+    });
+    assert!(shows(&harness, "page 1 of 2"), "the card must say where it is");
+    assert!(shows(&harness, "Next"), "and offer the next page");
+    assert!(shows(&harness, "Open in your viewer"));
+}
+
+#[test]
+fn a_preview_that_cannot_be_made_says_why() {
+    let mut app = app_with(&all_fixtures());
+    app.preview = Some(career_ops_desktop::app::PdfPreview {
+        path: "/fixture/output/missing.pdf".into(),
+        page: 1,
+        pages: 1,
+        texture: None,
+        error: Some("There is no file at /fixture/output/missing.pdf".into()),
+    });
+    let harness = harness_for(app, |ui, app| {
+        // The card is drawn on its own here, so the token styles it names are
+        // installed first — a screen draws through `frame`, which does this.
+        let t = career_ops_desktop::theme::adopt(ui);
+        views::pdfview::card(ui, app, t);
+    });
+    assert!(shows(&harness, "no preview"), "the card must say there is none");
+    assert!(
+        shows(&harness, "There is no file at"),
+        "and give the one sentence that says what to do about it"
+    );
+}

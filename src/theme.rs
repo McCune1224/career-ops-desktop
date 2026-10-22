@@ -214,6 +214,23 @@ fn publish(ctx: &egui::Context, palette: Palette) {
 /// through the shell, and egui panics when a `TextStyle::Name` is resolved
 /// against a style that does not define it. So every screen frame calls this
 /// first; it is a no-op once the styles are installed.
+/// Make `ui` draw with the app's own token styles.
+///
+/// Installing the styles on the context is not enough for the frame that is
+/// being drawn right now: a `Ui` captures the context's style when it is
+/// created, so a style installed a moment ago never reaches it. Copies the live
+/// style onto the `Ui` and returns the palette in one step, so a caller cannot
+/// do one and forget the other.
+pub fn adopt(ui: &mut egui::Ui) -> Palette {
+    ensure(ui.ctx());
+    let live = ui.ctx().style_of(ui.ctx().theme()).as_ref().clone();
+    let style = ui.style_mut();
+    style.text_styles = live.text_styles;
+    style.spacing = live.spacing;
+    style.visuals = live.visuals;
+    palette(ui.ctx())
+}
+
 pub fn ensure(ctx: &egui::Context) {
     // Whichever theme egui currently resolves is the one a screen will draw
     // with, so asking it is the right question either way.

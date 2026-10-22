@@ -363,6 +363,21 @@ pub struct CvEditor {
     pub dirty: bool,
 }
 
+/// A PDF page painted in the window, and what it took to get it.
+///
+/// Not `Debug`: the texture handle it holds does not implement it, and a
+/// debug-printable preview is worth nothing to anyone.
+#[derive(Clone, Default)]
+pub struct PdfPreview {
+    pub path: String,
+    pub page: usize,
+    pub pages: usize,
+    /// The page as a texture, once it has been rasterised.
+    pub texture: Option<egui::TextureHandle>,
+    /// Why there is no page, when there is not. One actionable sentence.
+    pub error: Option<String>,
+}
+
 /// One personalization section, as the editor shows it.
 #[derive(Debug, Clone, Default)]
 pub struct PersonalizationSection {
@@ -446,6 +461,8 @@ pub struct CareerOpsApp {
     pub outcome: OutcomeForm,
     /// The rows the user shortlisted for a batch, by inbox URL.
     pub shortlist: Vec<String>,
+    /// The PDF page the window is showing, when one is open.
+    pub preview: Option<PdfPreview>,
     /// The state a bulk change applies.
     pub bulk_state: String,
     /// The free-text search query.
@@ -463,6 +480,10 @@ pub struct CareerOpsApp {
     /// egui's clock at the last frame, so an event folded outside a `Ui` still
     /// gets a timestamp.
     pub run_now: f64,
+    /// The context textures are uploaded through. A preview is rasterised
+    /// outside a `Ui` (a click handler has no `Ui` to borrow), so the context is
+    /// held here rather than threaded through every action.
+    pub texture_ctx: egui::Context,
 }
 
 impl CareerOpsApp {
@@ -485,6 +506,7 @@ impl CareerOpsApp {
 
             outcome: OutcomeForm::default(),
             shortlist: Vec::new(),
+            preview: None,
             bulk_state: "Applied".to_string(),
             find_query: String::new(),
             outreach_company: String::new(),
@@ -494,6 +516,7 @@ impl CareerOpsApp {
             personalization_section: String::new(),
             personalization_body: String::new(),
             run_now: 0.0,
+            texture_ctx: egui::Context::default(),
         }
     }
 
@@ -547,6 +570,14 @@ impl CareerOpsApp {
             return;
         };
         self.go(screen.clone());
+    }
+
+    /// Point the app at the context it will upload textures through.
+    ///
+    /// Called once the window exists. A headless test keeps the default
+    /// context, which uploads textures just as well.
+    pub fn attach_context(&mut self, ctx: &egui::Context) {
+        self.texture_ctx = ctx.clone();
     }
 
     /// Re-apply the visual system after a theme or zoom change.
@@ -701,6 +732,74 @@ impl CareerOpsApp {
             }
             Err(e) => self.state.fail(format!("could not log the follow-up: {e}")),
         }
+    }
+
+    /// Open a PDF preview for one page of one file.
+    ///
+    /// The rasteriser is asked only when the user asks for the preview, so a
+    /// machine without poppler pays nothing until the feature is used.
+    pub fn open_preview(&mut self, path: &str) {
+        let file = std::path::PathBuf::from(path);
+        let pages = crate::pdf::page_count(&file);
+        let mut preview = PdfPreview {
+            path: path.to_string(),
+            page: 1,
+            pages: pages.max(1),
+            texture: None,
+            error: None,
+        };
+        if pages == 0 {
+            preview.error = Some(format!("There is no file at {path}"));
+            self.preview = Some(preview);
+            return;
+        }
+        match crate::pdf::render_page(&file, 1, crate::pdf::PREVIEW_DPI) {
+            Ok(page) => {
+                let image = page.to_color_image();
+                preview.texture = Some(
+                    self.texture_ctx
+                        .load_texture("pdf-preview", image, egui::TextureOptions::LINEAR),
+                );
+            }
+            Err(err) => preview.error = Some(err.to_string()),
+        }
+        self.preview = Some(preview);
+    }
+
+    /// Move the preview by `delta` pages, re-rasterising that page.
+    pub fn preview_page(&mut self, delta: i64) {
+        let Some(current) = self.preview.clone() else {
+            return;
+        };
+        let target = (current.page as i64 + delta).clamp(1, current.pages.max(1) as i64) as usize;
+        if target == current.page {
+            return;
+        }
+        let file = std::path::PathBuf::from(&current.path);
+        let mut next = PdfPreview {
+            page: target,
+            ..current.clone()
+        };
+        match crate::pdf::render_page(&file, target, crate::pdf::PREVIEW_DPI) {
+            Ok(page) => {
+                let image = page.to_color_image();
+                next.texture = Some(
+                    self.texture_ctx
+                        .load_texture("pdf-preview", image, egui::TextureOptions::LINEAR),
+                );
+                next.error = None;
+            }
+            Err(err) => {
+                next.texture = None;
+                next.error = Some(err.to_string());
+            }
+        }
+        self.preview = Some(next);
+    }
+
+    /// Close the preview, and let go of the texture with it.
+    pub fn close_preview(&mut self) {
+        self.preview = None;
     }
 
     /// Pick a row for a bulk change.

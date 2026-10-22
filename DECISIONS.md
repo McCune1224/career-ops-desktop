@@ -158,7 +158,7 @@ user's real data.
 
 ---
 
-## D-6. PDFs are handed to the user's viewer, not rendered
+## D-6. PDFs are handed to the user's viewer, not rendered (superseded by D-22)
 
 **Decision.** The report screen offers "Open the tailored CV (PDF)" and "Open
 the cover letter (PDF)", which call `xdg-open` on the resolved file. It does not
@@ -718,3 +718,44 @@ cannot be mistaken for an install. `cv-experience-order.mjs` is imported as a
 FUNCTION rather than spawned: the run path must not shell out to a core script
 (the persistence guard in `tests/desktop-engine-parity.test.mjs`), and the
 guard is a pure function over the HTML the agent produced.
+
+---
+
+## D-22. A PDF page is rasterised by poppler and painted as a texture
+
+**Decision.** The client previews a PDF page in the window. The page is
+rasterised by poppler's `pdftoppm` — the same poppler the career-ops core
+already depends on for `pdftotext` — and painted into egui as a texture. D-6's
+"hand the file to your viewer" is still offered beside it, on the same row, and
+is still the answer for anything past "does this page look right".
+
+**Why this does not break X-6.** X-6 is about a *webview*: no embedded browser,
+no WebKit, no CEF, no HTML rendering engine. A subprocess that turns a PDF into
+pixels, and a texture egui paints, is neither. `tests/no_webview.rs` still
+passes on the lockfile and on `ldd`, and no dependency was added at all.
+
+**The format is PPM, and that is the point.** `pdftoppm` writes `P6
+<w> <h>
+255
+`
+and then three bytes per pixel, so decoding it is thirty lines in `src/pdf.rs`
+and needs no crate. A PNG or a JPEG preview would have pulled in a decoder for
+a picture nobody zooms into.
+
+**What the client owns, and what the tool owns.** The rasteriser owns the
+pixels: its scale differs between poppler builds (`-r 72` gave 2x on the build
+this was written against), so the tests assert the page's shape and its CONTENT,
+not a pixel count. The client owns the decode, the failure sentences and the
+layout.
+
+**Three failures, three sentences.** `pdftoppm` missing says so and points at
+the user's own viewer; a PDF poppler refuses says what poppler said; a PPM whose
+header lies says it is unreadable. "No preview" with no reason is the failure
+mode a user cannot act on, so it is not one this module can produce.
+
+**Two bugs the tests found.** The scratch directory was keyed on process and
+page, so two concurrent previews (and two tests) deleted each other's files —
+it is keyed on a per-call counter now. And the card named a token text style
+without installing it, which is fine inside `views::frame` and a panic outside
+it; `theme::adopt` is now the one place that does the four lines, and both the
+frame and a screen drawn on its own use it.

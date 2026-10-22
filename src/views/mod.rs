@@ -7,6 +7,7 @@ pub mod followups;
 pub mod interview;
 pub mod maintenance;
 pub mod outcomes;
+pub mod pdfview;
 pub mod pipeline;
 pub mod portals;
 pub mod report;
@@ -87,16 +88,10 @@ pub fn frame(
 ) {
     // A `Ui` captures the context's style when it is created, so a style
     // installed by `ensure` a moment ago would not reach this frame's widgets.
-    // Refresh it: then a screen drawn by a host that never called
-    // `theme::apply` still renders with the app's type scale instead of
+    // `theme::adopt` refreshes it: then a screen drawn by a host that never
+    // called `theme::apply` still renders with the app's type scale instead of
     // panicking on a named text style.
-    theme::ensure(ui.ctx());
-    let live = ui.ctx().style_of(ui.ctx().theme()).as_ref().clone();
-    let style = ui.style_mut();
-    style.text_styles = live.text_styles;
-    style.spacing = live.spacing;
-    style.visuals = live.visuals;
-    let t = theme::palette(ui.ctx());
+    let t = theme::adopt(ui);
     ui.add_space(4.0);
     ui.heading(RichText::new(title).color(t.fg));
     if let Some(sub) = subtitle {

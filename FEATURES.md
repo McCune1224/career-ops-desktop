@@ -19,7 +19,7 @@ root scripts, 32 `lib/` modules, 47 mode files at the top of `modes/` plus 4
 under `modes/interview/`, 122 providers, 49 web API routes, 15 web pages, 9
 desktop bridge operations, 547 test suites.
 
-The inventory below is **152 rows** across 18 epics.
+The inventory below is **153 rows** across 18 epics.
 
 ---
 
@@ -307,6 +307,7 @@ rows; the web UI has no equivalent.
 | E16-S08 | Remember the last screen across launches | none | done | `the_app_reopens_on_the_screen_it_was_left_on` | S | E16-S04 |
 | E16-S09 | Recover from a bridge that is missing or too old | `bridge.rs::discover` | done | `a_missing_engine_checkout_is_one_actionable_sentence` | S |  |
 | E16-S10 | Report a version mismatch between app and engine | none | done | `a_run_is_refused_when_the_app_and_the_bridge_disagree` | S | E16-S09 |
+| E16-S11 | Preview a PDF page in the window, and page through it | none (the web app uses an `<iframe>`) | done | `a_page_is_rasterised_into_pixels`, `the_report_screen_offers_a_pdf_preview_and_the_viewer_opens_it`, `the_documents_screen_offers_a_preview_of_what_it_lists`, `a_preview_that_cannot_be_made_says_why` | M | E16-S01 |
 
 ## E17. Deferred: GUI rework
 
@@ -343,12 +344,12 @@ Everything else is post-functional.
 
 | Desktop status | Rows |
 |---|---|
-| done | 112 |
+| done | 113 |
 | partial | 2 |
 | missing | 4 |
 | gap | 30 |
 | n/a | 4 |
-| **total** | **152** |
+| **total** | **153** |
 
 Per epic: E00 8, E01 12, E02 11, E03 11, E04 13, E05 7, E06 12, E07 14, E08 5,
 E09 4, E10 8, E11 6, E12 10, E13 6, E14 5, E15 4, E16 10, E17 6.

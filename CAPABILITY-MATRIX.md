@@ -122,6 +122,7 @@ breaks. `cargo test` and `node --test` are the only instruments.
 | 8.2 | Open a generated document | `GET /api/documents?id=` | `documents` op `resolve` | `the documents can be opened from the list` |
 | 8.3 | Archive a posting as a capture | `archive-posting.mjs`, `jd-capture.mjs` | `documents` op `archive` | `the_documents_screen_lists_what_was_generated` |
 | 8.4 | Keep the PDF column honest | `sync-pdf-flags.mjs`, `data/pdf-index.tsv` | `maintenance` op `pdfFlags` | `the PDF column is synced with the files that exist` |
+| 8.5 | **Preview a PDF page in the window**, and page through it | the web app's `<iframe>` | `src/pdf.rs` (poppler → PPM), `views/pdfview.rs` | `a_page_is_rasterised_into_pixels`, `the_report_screen_offers_a_pdf_preview_and_the_viewer_opens_it`, `the_documents_screen_offers_a_preview_of_what_it_lists`, `a_preview_that_cannot_be_made_says_why` |
 
 ## 9. Interview preparation
 
@@ -165,6 +166,7 @@ breaks. `cargo test` and `node --test` are the only instruments.
 | 11.6 | Reopen where you left off | `settings.last_screen` | `the_app_reopens_on_the_screen_it_was_left_on` |
 | 11.7 | Open a PDF or a URL in the user's own viewer | `views/report.rs::open_file`, `views/pipeline.rs::open_url` | `pipeline_screen_offers_report_and_posting_actions` |
 | 11.8 | No webview, in the lockfile and in `ldd` | `tests/no_webview.rs` | `the_lockfile_names_no_webview_crate`, `the_built_binary_links_no_webview_runtime` |
+| 11.9 | A PDF page in the window, with no browser and no PDF crate | `src/pdf.rs`, `views/pdfview.rs` | `a_page_is_rasterised_into_pixels`, `a_higher_resolution_makes_more_pixels` |
 
 ## Not in scope — named gaps
 
@@ -179,7 +181,6 @@ store, and `FEATURES.md` records every one as `gap` with the reason.
 | **CV studio** | `POST /api/cv-studio/[n]` | Per-block CV editing is a deferred surface. |
 | **Scheduled scans** | `/api/scheduler`, `/api/scheduled-jobs*` | It installs OS-level schedulers. |
 | **Analytics** | `/analytics`, `/api/stats`, `/api/patterns` | Read-only reporting over the whole history. |
-| **PDF pages rendered inside the window** | the web app's `<iframe>` | There is no `<iframe>` without a webview (DECISIONS.md D-6). |
 
 ## Scope note
 

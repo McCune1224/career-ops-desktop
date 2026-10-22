@@ -20,6 +20,10 @@ pub fn ui(ui: &mut egui::Ui, app: &mut CareerOpsApp) {
         Some("Every tailored CV and cover letter, and the postings kept with them."),
         app,
         |ui, app| {
+            crate::views::pdfview::card(ui, app, t);
+            if app.preview.is_some() {
+                ui.add_space(14.0);
+            }
             list_card(ui, app, t);
             ui.add_space(14.0);
             archive_card(ui, app, t);
@@ -70,6 +74,9 @@ fn list_card(ui: &mut egui::Ui, app: &mut CareerOpsApp, t: Palette) {
                     );
                 }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if crate::views::ghost_button(ui, "Preview").clicked() {
+                        preview_document(app, &doc.filename);
+                    }
                     if crate::views::ghost_button(ui, "Open").clicked() {
                         open_document(app, &doc.filename);
                     }
@@ -177,6 +184,26 @@ fn archive(app: &mut CareerOpsApp) {
             });
         }
         Err(e) => app.state.fail(format!("could not archive the posting: {e}")),
+    }
+}
+
+/// Show a generated document's first page in the window.
+fn preview_document(app: &mut CareerOpsApp, filename: &str) {
+    let params = serde_json::json!({ "action": "resolve", "filename": filename });
+    match app.backend.call("documents", params) {
+        Ok(value) => {
+            let path = value
+                .get("path")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("")
+                .to_string();
+            if path.is_empty() {
+                app.state.fail("that document could not be found");
+            } else {
+                app.open_preview(&path);
+            }
+        }
+        Err(e) => app.state.fail(format!("could not open the document: {e}")),
     }
 }
 

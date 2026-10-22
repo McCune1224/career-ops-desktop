@@ -102,6 +102,7 @@ pub fn run() -> eframe::Result<()> {
             // Reopen where the user left off. A saved id that names no screen
             // opens Today, so a stale setting is never a blank window.
             let screen = Screen::from_id(&settings.last_screen);
+            app.attach_context(&cc.egui_ctx);
             app.go(screen);
             app.load_all();
             Ok(Box::new(app))

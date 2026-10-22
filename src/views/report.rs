@@ -29,8 +29,12 @@ pub fn ui(ui: &mut egui::Ui, app: &mut CareerOpsApp) {
         .unwrap_or_else(|| format!("Report {}", report.n));
 
     frame(ui, &title, report.file.as_deref(), app, |ui, app| {
-        verdict_card(ui, &report, t);
+        verdict_card(ui, app, &report, t);
         ui.add_space(12.0);
+        crate::views::pdfview::card(ui, app, t);
+        if app.preview.is_some() {
+            ui.add_space(12.0);
+        }
 
         body_card(ui, &report, t);
         ui.add_space(12.0);
@@ -55,7 +59,7 @@ pub fn ui(ui: &mut egui::Ui, app: &mut CareerOpsApp) {
 }
 
 /// The verdict at the top: how it scored, what tier, and every way out.
-fn verdict_card(ui: &mut egui::Ui, report: &crate::model::Report, t: Palette) {
+fn verdict_card(ui: &mut egui::Ui, app: &mut CareerOpsApp, report: &crate::model::Report, t: Palette) {
     theme::hero_card(ui, t).show(ui, |ui| {
         ui.horizontal_wrapped(|ui| {
             if let Some(app_row) = &report.application {
@@ -124,6 +128,18 @@ fn verdict_card(ui: &mut egui::Ui, report: &crate::model::Report, t: Palette) {
             if let Some(path) = report.cover_pdf.as_deref() {
                 if crate::views::ghost_button(ui, "Open the cover letter (PDF)").clicked() {
                     open_file(path);
+                }
+            }
+            // The previews live on their own row, because they are the same two
+            // files seen rather than handed over.
+            if let Some(path) = report.cv_pdf.clone() {
+                if crate::views::ghost_button(ui, "Preview the CV").clicked() {
+                    app.open_preview(&path);
+                }
+            }
+            if let Some(path) = report.cover_pdf.clone() {
+                if crate::views::ghost_button(ui, "Preview the cover letter").clicked() {
+                    app.open_preview(&path);
                 }
             }
         });
