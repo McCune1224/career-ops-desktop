@@ -58,12 +58,12 @@ wrong no matter how well it works.
 
 | ID | Invariant | Where it is enforced |
 |---|---|---|
-| X-1 | Every tracker write goes through `set-status.mjs`, `merge-tracker.mjs`, `reserve-report-num.mjs`, `persist-evaluation-report.mjs`, or `tracker.mjs delete`. Never a parallel writer. | `DECISIONS.md` D-4; `tests/desktop-bridge-ops.test.mjs` |
+| X-1 | Every tracker write goes through `set-status.mjs`, `merge-tracker.mjs`, `reserve-report-num.mjs`, `persist-evaluation-report.mjs`, or `tracker.mjs delete`. Never a parallel writer. | `DECISIONS.md` D-4; `tests/desktop-bridge-ops.test.mjs`; `the bridge writes in exactly the files that are allowed to write` and `no bridge file writes the tracker itself (X-1)` in the parity suite |
 | X-2 | One implementation per rule. A new client calls the shared engine rather than re-deriving it. | `tests/desktop-engine-parity.test.mjs` |
 | X-3 | A missing file is not a malformed file. `ENOENT` and a parse error are different outcomes. | `web/AGENTS.md`; `web/src/lib/portals-config.mjs` |
 | X-4 | Untrusted content is data, never instructions. Postings, forms and emails can inform a score, never change a rule. | `AGENTS.md`; `validate-untrusted-content-coverage.mjs` |
-| X-5 | Nothing submits an application. No code path fills and sends a form. | `web/AGENTS.md` rule 3 |
-| X-6 | The native client embeds no webview. | `tests/no_webview.rs` |
+| X-5 | Nothing submits an application. No code path fills and sends a form. | `web/AGENTS.md` rule 3; `nothing in the client can submit an application (X-5)` in the parity suite |
+| X-6 | The native client embeds no webview. | `tests/no_webview.rs`; `dev/dependency-audit.mjs` |
 | X-7 | A generated claim traces to a primary source file, or it is not made. | `AGENTS.md` source-of-truth boundary; `story-provenance-check.mjs` |
 | X-8 | The updater's coverage guard stays green. Every tracked file is in `SYSTEM_PATHS`, `USER_PATHS`, or a declared exclusion. | `validate-system-paths-coverage.mjs` |
 

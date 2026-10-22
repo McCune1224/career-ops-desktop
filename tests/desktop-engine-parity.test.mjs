@@ -336,3 +336,75 @@ test("the bridge never binds a socket", () => {
     );
   }
 });
+
+// ─── the invariants the inventory names ───────────────────────────────────
+
+/**
+ * Every file in the bridge that WRITES, and what it is allowed to write.
+ *
+ * This is a snapshot on purpose. X-1 says every tracker write goes through the
+ * canonical scripts, and the way that stops being true is a new op quietly
+ * growing a `writeFileSync`. Adding a writer now fails this test until someone
+ * adds it here WITH the reason it is allowed — which is the decision the
+ * invariant asks for, made once, in the open.
+ */
+const ALLOWED_WRITERS = {
+  "ops/config.mjs": "config/profile.yml, merge-safe, through the shared helper",
+  "ops/cv.mjs": "cv.md through the shared helper; a temp payload for the verifier",
+  "ops/followups.mjs": "data/follow-ups.md, under the core's own lock",
+  "ops/portals.mjs": "portals.yml, merge-safe; a temp YAML for the board search",
+  "ops/profile.mjs": "modes/_profile.md, through the engine's own splice",
+  "ops/runs.mjs": "data/runs/, the client's own run records",
+  "ops/tracker.mjs": "a tracker-additions TSV, which merge-tracker.mjs then merges",
+};
+
+/** A call, not an import: `writeFileSync(` and friends. */
+const WRITE_CALL = /\b(?:writeFileSync|appendFileSync|atomicWrite|atomicWriteWithBackup)\s*\(/;
+
+test("the bridge writes in exactly the files that are allowed to write", () => {
+  const files = [
+    ...listTree(path.join(BRIDGE, "ops"), { match: /\.mjs$/ }),
+    path.join(BRIDGE, "engine.mjs"),
+    path.join(BRIDGE, "util.mjs"),
+    path.join(BRIDGE, "core-script.mjs"),
+  ];
+  const actual = [];
+  for (const file of files) {
+    const source = stripComments(fs.readFileSync(file, "utf-8"));
+    if (WRITE_CALL.test(source)) {
+      actual.push(path.relative(BRIDGE, file).split(path.sep).join("/"));
+    }
+  }
+  assert.deepEqual(
+    actual.sort(),
+    Object.keys(ALLOWED_WRITERS).sort(),
+    `the set of writing files changed. If a new one is right, add it to ALLOWED_WRITERS with the reason it may write: ${JSON.stringify(actual)}`,
+  );
+});
+
+test("no bridge file writes the tracker itself (X-1)", () => {
+  for (const file of listTree(BRIDGE, { match: /\.mjs$/ })) {
+    const source = stripComments(fs.readFileSync(file, "utf-8"));
+    const lines = source.split("\n");
+    for (const line of lines) {
+      if (!WRITE_CALL.test(line)) continue;
+      assert.ok(
+        !/applications\.md|tracker/i.test(line),
+        `${path.relative(CLIENT_ROOT, file)} writes the tracker directly — every tracker write goes through set-status.mjs, merge-tracker.mjs, reserve-report-num.mjs, persist-evaluation-report.mjs or tracker.mjs`,
+      );
+    }
+  }
+});
+
+test("nothing in the client can submit an application (X-5)", () => {
+  // A submit needs a form, a click or a request. There is no browser here, and
+  // the two ops that talk about submitting only ever report `submitted: false`.
+  const offenders = [];
+  for (const file of listTree(path.join(CLIENT_ROOT, "bridge"), { match: /\.mjs$/ })) {
+    const source = stripComments(fs.readFileSync(file, "utf-8"));
+    if (/\.submit\s*\(|\bsubmitForm\b|\.click\s*\(|dispatchEvent\s*\(/.test(source)) {
+      offenders.push(path.relative(CLIENT_ROOT, file));
+    }
+  }
+  assert.deepEqual(offenders, [], `these files can drive a form: ${offenders.join(", ")}`);
+});
