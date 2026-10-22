@@ -158,7 +158,7 @@ user's real data.
 
 ---
 
-## D-6. PDFs are handed to the user's viewer, not rendered (superseded by D-22)
+## D-6. PDFs are handed to the user's viewer, not rendered (superseded by D-23)
 
 **Decision.** The report screen offers "Open the tailored CV (PDF)" and "Open
 the cover letter (PDF)", which call `xdg-open` on the resolved file. It does not
@@ -721,7 +721,23 @@ guard is a pure function over the HTML the agent produced.
 
 ---
 
-## D-22. A PDF page is rasterised by poppler and painted as a texture
+## D-22. One command is the gate, and it globs the directory
+
+The README documented the gate as a list of commands, and the list had a hole:
+`node --test tests/desktop-*.test.mjs` does not match
+`tests/acceptance.test.mjs`, so the check that proves `FEATURES.md` is not lying
+was the one check the documented command skipped. `dev/verify.mjs` now runs
+`cargo test`, every `tests/*.test.mjs`, and the dependency audit, and it reads
+the directory rather than naming files — a new suite is in the gate the moment
+it exists, without anyone remembering to edit a list.
+
+That is the same lesson as the `SYSTEM_PATHS` coverage guard in the career-ops
+checkout: a hand-maintained list of what to check drifts, and the drift is
+silent because the check keeps passing on less.
+
+---
+
+## D-23. A PDF page is rasterised by poppler and painted as a texture
 
 **Decision.** The client previews a PDF page in the window. The page is
 rasterised by poppler's `pdftoppm` — the same poppler the career-ops core

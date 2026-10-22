@@ -193,10 +193,16 @@ FEATURES.md is the inventory and this file is the parity claim.
 ## The evidence, in one place
 
 ```bash
+node dev/verify.mjs     # THE gate: cargo test, every Node suite, the audit
+```
+
+Each piece on its own:
+
+```bash
 cargo test                                     # the Rust side
 node --test tests/desktop-*.test.mjs           # the Node side
-node dev/dependency-audit.mjs                  # lockfile + ldd
 node --test tests/acceptance.test.mjs          # FEATURES.md against the code
+node dev/dependency-audit.mjs                  # lockfile + ldd
 ```
 
 ### What each suite is for

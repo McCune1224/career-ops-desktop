@@ -70,8 +70,9 @@ Two rules that keep the board honest:
 Every issue, regardless of kind:
 
 - [ ] Acceptance check from `FEATURES.md` exists and passes.
-- [ ] `cargo test` green if this repository was touched; `node test-all.mjs` green if
-      the career-ops checkout was touched. Both, if both.
+- [ ] `node dev/verify.mjs` green if this repository was touched (it runs
+      `cargo test`, every Node suite and the dependency audit); `node test-all.mjs`
+      green if the career-ops checkout was touched. Both, if both.
 - [ ] No new dependency in `Cargo.lock` that names a webview crate
       (`tests/no_webview.rs`).
 - [ ] `FEATURES.md` status column updated in the same commit.

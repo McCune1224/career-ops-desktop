@@ -145,15 +145,24 @@ half, outcomes and outreach, and the core's own maintenance tools.
 ## Working on it
 
 ```bash
-cargo test                    # the Rust side: screens, payloads, dependency audit, live data
+node dev/verify.mjs           # THE gate: cargo test, every Node suite, the audit
+node dev/verify.mjs --fast    # the Node side and the audit, skipping cargo
 cargo run --release           # the app
+```
 
-# The dependency audit on its own — lockfile + ldd, with the full library list:
-node dev/dependency-audit.mjs
+`dev/verify.mjs` is the gate rather than a list of commands in this file,
+because the list had a hole: it documented `node --test tests/desktop-*.test.mjs`,
+which does not match `tests/acceptance.test.mjs` — the one check that proves
+`FEATURES.md` is not lying about what works. The script globs the directory, so
+a new suite is in the gate the moment it exists.
 
-# The Node side of the client: engine parity + the live bridge, against a
-# throwaway fixture:
-node --test tests/desktop-*.test.mjs
+Each piece on its own, when you want just one:
+
+```bash
+cargo test                              # the Rust side
+node --test tests/desktop-*.test.mjs    # the bridge and the engine parity
+node --test tests/acceptance.test.mjs   # FEATURES.md against the code
+node dev/dependency-audit.mjs           # lockfile + ldd, with the library list
 ```
 
 Before walking the capability matrix against your own data, check that the
@@ -191,7 +200,15 @@ JSON shapes the bridge sends. If a screen stops showing what the web app shows
 for the same capability, one of those tests fails.
 
 `tests/desktop-bridge-ops.test.mjs` is the other half: it starts the real bridge
-against a real fixture and drives it over its real protocol.
+against a real fixture and drives it over its real protocol. Every suite, and
+what each one is for, is listed in [CAPABILITY-MATRIX.md](CAPABILITY-MATRIX.md).
+
+### How a PDF gets into the window
+
+`src/pdf.rs` rasterises a page with poppler's `pdftoppm` and reads the PPM it
+writes; `views/pdfview.rs` paints it as a texture. No webview, no PDF crate, and
+no new system dependency — poppler is what the core already needs for
+`pdftotext` (DECISIONS.md D-23).
 
 ---
 
