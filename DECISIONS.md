@@ -1,0 +1,508 @@
+# Decisions
+
+A running record of the choices this client is made of, and the evidence behind
+each one. Ordered by when they had to be made.
+
+---
+
+## D-1. Placement: inside the career-ops checkout (superseded by D-14)
+
+**Decision.** The native client lives in the career-ops checkout, under
+`desktop/`, as a Cargo package plus a Node bridge.
+
+**Evidence for in-repo, over anywhere else:**
+
+| Fact | Where |
+|---|---|
+| Its engine is the repo's own code. The bridge imports `web/src/lib/**` and spawns the core's root scripts; a separate repository would have to vendor or re-fetch both on every release. | `bridge/engine.mjs`, `bridge/alias-hook.mjs` |
+| The core already carries a native-adjacent tree at a stable path for exactly this reason (`dashboard/`, a Go app, is in `SYSTEM_PATHS`). | `update-system.mjs` `SYSTEM_PATHS` |
+| The repo's convention for "one script = one job, every script registered" is enforced by a coverage guard that only looks at *tracked files in this repo*. A sibling repo would be outside every guard. | `validate-system-paths-coverage.mjs` |
+| The user's own working tree is the data root this app is developed against. | `dev/make-fixture.mjs` |
+
+**Registered in `SYSTEM_PATHS`**, as the Goal required: `'desktop/'` plus one
+carve-out, `'web/src/lib/'`, because the bridge is built on the web app's engine
+modules rather than on a copy of them (see D-2). `node
+validate-system-paths-coverage.mjs` passes, and its self-test asserted both
+halves of that carve-out: the engine tree ships, the web app itself does not.
+
+**Not in the npm package.** `.npmignore` excluded `desktop/`: it is a Rust
+source tree and an npm install cannot build it. The build tree (`target/`) is
+gitignored; the updater prunes only tracked files (`git ls-files`), so it can
+never delete a user's cargo cache.
+
+**Superseded.** Every one of those reasons was about *installing* the client
+alongside the engine through the engine's own updater. That is not what this
+client is for: it is one person's client, developed beside a checkout, and the
+owner of the upstream repository asked for their tree to be left untouched. D-14
+records what replaced this.
+
+---
+
+## D-2. Reuse, not reimplementation: the bridge imports the web app's engine
+
+**Decision.** The bridge holds no engine logic. `bridge/engine.mjs` is
+the single import surface, and every module on it is the web app's own file,
+reached through the web app's own `@/` alias:
+
+```
+bridge/engine.mjs  ──"@/lib/…"──▶  web/src/lib/…
+        ▲                                        ▲
+        │                                        │
+bridge/ops/run.mjs            web/src/app/api/run/route.ts
+```
+
+The `@/` alias is a webpack/Turbopack convention; Node has no idea what it
+means. `bridge/alias-hook.mjs` installs the same mapping as an ESM
+resolve hook, and `server.mjs` imports the ops **dynamically** after the hook is
+installed — ESM resolves a module graph before any body runs, so a static import
+of an aliased module would be resolved before the hook existed. Node 22 strips
+`.ts` types on import, so the web app's TypeScript server modules load as they
+are.
+
+**Why not move the engine out of `web/` instead?** `web/server.mjs` states the
+invariant in its own header: *"Imports nothing outside web/"*, because the web
+tree is excluded from the core's packaging and coverage contracts. Moving the
+engine to a top-level `engine/` would have every web module import across that
+boundary — inverting the invariant to satisfy a client that is younger than it.
+Taking the engine up through the alias kept `web/` untouched: **not one line of
+`web/` changed for this client.**
+
+**Evidence it is the same engine:**
+
+- `tests/desktop-engine-parity.test.mjs` — the bridge's run path imports the
+  same ten engine modules the web route imports, through `@/lib/`, and the
+  bridge tree contains no file with any of those names (no vendored copy).
+- The same suite builds the Claude and Codex argv through the web app's own
+  functions (`claudeCliArgs`, `codexStreamArgs`, `fenceArgs`) for all three run
+  kinds and asserts the fencing still holds and no write-capable tool is
+  granted.
+- The same suite asserts the run op cannot reach the generic script runner and
+  never calls `spawn()` itself: it *hands* `spawn` to `persistEvaluation` and
+  `renderAndMarkPdf`, exactly as the web route does. Those are the functions
+  that run `reserve-report-num.mjs`, `persist-evaluation-report.mjs`,
+  `merge-tracker.mjs`, `generate-pdf.mjs` and `mark-pdf-ready.mjs`.
+
+**One extraction was needed, and it is a two-word one.** A status change from
+this client should be attributable in `data/status-log.tsv` without pretending
+to be the web app. `set-status.mjs` has an allow-list (`WRITER_SOURCES`) and
+`funnel-velocity.mjs` has its own (`VALID_SOURCES`, `DAY_MATH_SOURCES`); a label
+in one and not the other is persisted and then silently dropped. `desktop` was
+added to both, with the reasoning written beside each. Behavior for every
+existing source is unchanged, and
+`tests/desktop-engine-parity.test.mjs::\`desktop\` is a source both the writer and
+the reader accept` pins the pair.
+
+---
+
+## D-3. The bridge is stdio, and binds nothing
+
+**Decision.** The Rust app starts `node bridge/server.mjs` and talks
+newline-delimited JSON over its stdin/stdout. No socket, no port, no token.
+
+The Goal allows a local bridge that "binds loopback only". A stdio bridge
+satisfies that by construction rather than by discipline: there is no address to
+get wrong, no port to collide with a second instance, and no authentication
+story to get wrong either. `tests/desktop-engine-parity.test.mjs::the bridge
+never binds a socket` fails if any bridge module ever grows `listen`,
+`createServer` or an HTTP server.
+
+**Protocol.** One request per line in, one response per line out, plus
+`{"id":N,"event":…}` lines for a streaming run. The event vocabulary is the web
+app's NDJSON stream verbatim — `text`, `tool`, `status`, `keepalive`, `error`,
+`done` — so the desktop run screen shows the same steps the web run screen does,
+and a keepalive stays transport noise rather than becoming a log line
+(`app.rs::absorb_events`, pinned by `tests/screens.rs`).
+
+---
+
+## D-4. Every write goes through the canonical script. No second source of truth.
+
+| Write | Path | What the client never does |
+|---|---|---|
+| Status change | `set-status.mjs --row … <state> --source desktop --json` | never rewrites the tracker cell itself |
+| Evaluation report | `persistEvaluation` → `reserve-report-num.mjs`, `persist-evaluation-report.mjs`, `merge-tracker.mjs` | never picks a report number, never writes a TSV, never merges |
+| Tailored CV PDF | `pdf-render.mjs` → `generate-pdf.mjs`, `mark-pdf-ready.mjs` | never writes `output/` or the PDF column |
+| Follow-up log | `data/follow-ups.md` under the same in-process queue + core file lock as `/api/followups/log` | never appends outside the lock |
+| CV | `atomicWriteWithBackup` (temp + rename, timestamped `.bak`) | never writes `cv.md` in place |
+| Profile / cadence | `atomicWriteWithBackup` + the same malformed-YAML and non-mapping refusals as `/api/profile` | never seeds over a profile that exists |
+| Inbox skip | `inbox-skip.mjs` (checkbox byte only, under the pipeline lock) | never rewrites `data/pipeline.md` |
+| Pending-postings skip in the tracker | — | (out of scope; see the matrix) |
+
+`tests/desktop-bridge-ops.test.mjs` drives the real bridge against a throwaway
+fixture and asserts each of these on the files: the transition appears in
+`status-log.tsv` attributed to `desktop`, a refused state leaves the tracker
+byte-identical and writes no ledger row, the follow-up row has the canonical
+shape, the CV write leaves a backup.
+
+---
+
+## D-5. The engine checkout and the data root are two different things
+
+`web/src/lib/career-ops.ts` resolves the data root from `CAREER_OPS_ROOT` and
+the scripts from `CAREER_OPS_CODE_ROOT`, and its own comment explains why: a
+user can point the data root at a data-only directory. The bridge sets
+`CAREER_OPS_CODE_ROOT` to the checkout it lives in before importing the engine,
+because the library's fallback is `path.resolve(cwd, "..")` — right only when
+the process was started from `<checkout>/web`.
+
+`dev/make-fixture.mjs` builds that arrangement for development: user
+files are **copied** (a write cannot escape to the original), core scripts are
+**symlinked** (a script's `import.meta.url` resolves to the checkout, so it
+carries its own configuration, while `CAREER_OPS_ROOT` decides what it reads
+and writes). This is the "develop against a fixture copy of the data root via
+`CAREER_OPS_ROOT`" requirement, made reproducible.
+
+`tests/helpers/desktop-fixture.mjs` does the same thing in miniature for the
+test suites, with its own tracker, report and profile — no test ever reads the
+user's real data.
+
+---
+
+## D-6. PDFs are handed to the user's viewer, not rendered
+
+**Decision.** The report screen offers "Open the tailored CV (PDF)" and "Open
+the cover letter (PDF)", which call `xdg-open` on the resolved file. It does not
+render PDF pages inside the window.
+
+**Why.** The web app shows a PDF in an `<iframe>` — a browser capability. There
+is no `<iframe>` without a webview, which this client refuses to embed. The
+alternatives were a PDF rasterising crate (a large new dependency, and a second
+renderer whose output would not be the file the user is about to send) or
+asking the desktop to show the file it already has. The second is both smaller
+and more honest: the user sees the exact PDF that would be submitted.
+
+This is recorded as a deliberate difference from the web UI, not an oversight.
+
+---
+
+## D-7. The app's own settings do not go in `config/profile.yml`
+
+Which CLI to drive and which theme to use are preferences of *this client*.
+They live in `$XDG_CONFIG_HOME/career-ops-desktop/settings.json`
+(`settings.rs`). Putting them in `config/profile.yml` would add keys the core
+does not know about to a user-layer file that `validate-profile.mjs` and the
+CLI both read, and would make the two clients fight over one document.
+
+The data root can also be set there, which is how the app is pointed at the
+fixture during development without an environment variable.
+
+---
+
+## D-8. What was rejected, and on what evidence
+
+| Rejected | Why |
+|---|---|
+| Building the desktop UI on Tauri (or any webview shell) | Explicitly excluded by the Goal, and the dependency audit would fail: `wry`/`tauri` in `Cargo.lock`, WebKit in `ldd`. |
+| Running the Next.js server in the background and talking HTTP to it | It would reuse the routes verbatim, but it needs `web/node_modules`, a Next build, and a listening socket; it also makes `cargo test` depend on a Node server. The engine modules are already plain ESM, so the bridge gets the same reuse with one process and no port. |
+| Reimplementing the run pipeline in Rust | Forbidden by the Goal, and the parity suite exists to catch it drifting back. |
+| Moving `web/src/lib/**` into a new top-level `engine/` | Violates `web/server.mjs`'s stated "imports nothing outside web/" invariant and puts the web build at risk for no gain; see D-2. |
+| A separate git repository for the client | Rejected at the time: no access to the engine, outside every repo guard. Later reversed — see D-14. |
+| Rendering reports by shelling out to a markdown converter | `markdown.rs` is ~350 lines, has no dependency, and renders in the same frame. A subprocess would add a binary dependency for less control. |
+
+---
+
+## D-9. Getting `node test-all.mjs` green: two environment failures, one real defect
+
+The Goal requires the repo's gate green if the repo was touched, so a red run
+had to be explained rather than waved at. It was three failures, of three
+different kinds.
+
+### D-9a. Two environment failures, not ours
+
+`Did not expect a Playwright MCP warning` (×2). `doctor.mjs` takes the active
+CLI from the `OPENCODE=1` marker OpenCode stamps on every process it starts. The
+assertion writes a `.claude/settings.json` MCP registration and expects that to
+satisfy the check — true for `claude`, not for `opencode`. Running the same two
+doctor invocations by hand, from a temp cwd, with and without `OPENCODE`,
+reproduces it exactly: unset, no warning. Running the gate from inside an agent
+session is the trigger.
+
+### D-9b. One real defect, in the gate's own excerpt formatter
+
+`a failing test-runner suite is one failure with an excerpt` failed
+deterministically in the full run, and **also on a pristine
+`git worktree add --detach 373aba4`** with no `desktop/` present — so it
+predates this work.
+
+The first diagnosis was wrong and worth recording. The obvious suspect was
+`formatRunFailure()`'s 2000-character head/tail clip. It is not that: the child
+output is only 809 characters, so nothing was clipped there. The excerpt comes
+from `failureExcerpt()` in `lib/failure-excerpt.mjs`, which keeps the last
+twelve non-empty lines and recovers "error header" lines from above them so the
+message survives the window. Its header pattern is
+`SomeError: message` — and `node:test`'s **TAP** reporter does not use that
+shape. TAP spells a failure as structured fields:
+
+```
+not ok 1 - d fails
+  ---
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+
+    1 !== 2
+
+  code: 'ERR_ASSERTION'
+```
+
+None of those lines matches, so the recovery pass found nothing, the window kept
+the stack frames and `# fail 1`, and the report said a suite failed without ever
+saying why. The gate's own self-test looks for `ERR_ASSERTION` in exactly that
+output, which is how the defect surfaced.
+
+**Fixed** in `lib/failure-excerpt.mjs`: the recovery pass now also recognises a
+TAP record's own anchor lines (`not ok`, `failureType:`, `error:`, `code:`,
+`expected:`, `actual:`, `operator:`, `name:`) and the body of the `error: |-`
+block that carries the interpolated values. Still bounded by `maxHeaders`, so
+truncation is still reported rather than silent. The excerpt now reads:
+
+```
+not ok 1 - d fails
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+  code: 'ERR_ASSERTION'
+    Test.start (node:internal/test_runner/test:944:17)
+```
+
+`tests/failure-excerpt.test.mjs` gained two cases pinning the TAP shape,
+including the negative control that the old twelve-line window dropped
+`ERR_ASSERTION` from the same fixture — so the test fails against the code it
+replaces rather than passing either way.
+
+**Measured after the fix:** `env -u OPENCODE node test-all.mjs` →
+`15139 passed, 0 failed`, exit 0.
+
+## D-10. The look: one token module, and the window size is the window manager's
+
+The first build worked and looked wrong. Two measurements explain it, and one
+of them is not something an app can fix.
+
+### The type was egui's default
+
+Measured first: the primary display is 2560x1440 at 597x336 mm — about 109 PPI —
+with a desktop scale factor of 1.0. egui's default body size is 14 points, so
+text landed near 10.5 physical points, and the app set exactly two colours of
+its own and inherited everything else.
+
+So the visual system is now one module, `src/theme.rs`, and a screen never names
+a colour or a size:
+
+| | Before | Now |
+|---|---|---|
+| Body | 14 (egui default) | 16.5 |
+| Type steps | 1 | 5: 26 / 19 / 16.5 / 15 / 13.5, plus two named styles |
+| Table row | 26 | 36 |
+| Colours | 2 fills set inline | 15 semantic slots, each with a light and dark value |
+| Surfaces | flat | cards with a hairline edge, a 1px shadow, 10pt corners |
+| Nav | text labels | a selected pill with a 3px accent bar |
+| Status | raw text | a tinted pill (or a tinted combo, see below) |
+| Zoom | none | Ctrl +/-/0, persisted; sidebar A-/A+ |
+
+The palette is a developer-tool slate (`#0F172A` ground, `#1B2336` card) rather
+than pure black: the tracker is read for long stretches, and a true-black ground
+with pure-white text is harsher, not more legible.
+
+**One deliberate departure from the theme this was seeded from.** Its accent was
+green, and green is already this app's *success* semantic — a strong score, an
+applied row. An accent meaning "clickable" that competes with one meaning "went
+well" weakens both, so interactive is blue and green keeps one meaning.
+
+**Still a ComboBox in the table.** The status control has to stay a combo rather
+than become a pill: a combo's selected text reaches the accessibility tree as the
+control's *value*, while a pill would be a second node named "Applied" beside the
+filter tab of the same name. The screen tests refuse an ambiguous query, which is
+the correct behaviour, so the tint is carried on the text instead.
+
+**No custom font.** The repository's fonts are WOFF2 and egui cannot decode them;
+system fonts differ per machine. Typographic contrast comes from egui's built-in
+monospace for numbers, dates and tracker ids, which is free and identical
+everywhere. A specific typeface is a separate decision with its own asset.
+
+### The window: a window-manager fact, not a number to tune
+
+The window opened at 1280x820, which is half of a 2560x1440 panel — the larger
+half of "very small". Getting it bigger took three attempts, each measured:
+
+1. `with_inner_size([1500,980])` — honoured, still not big.
+2. Resize to 86% of the monitor once `monitor_size` is known. **Never fired**:
+   `winit` reports the monitor only after the window is mapped, so a one-shot
+   that cleared its own flag on frame 0 did nothing. A later `InnerSize` command
+   landed at 1113x1208 points on a display that should have taken 1914x1051.
+3. `with_maximized(true)` plus a `Maximized(true)` command — measured arriving as
+   `maximized: false`, and in a second run the window came back quarter-tiled at
+   1275x700, *smaller* than the fixed sizes.
+
+**What is actually happening:** this machine's window manager tiles every window
+to a quarter of the display. `xprop -root _NET_CLIENT_LIST` is empty, and every
+launch of every size comes back 1270x685. No `inner_size` the app asks for will
+change that; it is the window manager's contract, and the user's to change.
+
+So the app does the two things it can: opens at a generous 2000x1240 for window
+managers that honour it, and makes its content fit and stay legible when one
+tiles it down to a quarter. That second half is testable, so it is tested:
+
+- `the_tracker_table_fits_the_narrowest_canvas_it_is_designed_for` — the seven
+  column minimums plus their gaps must fit 840 points, which is what a
+  quarter-tiled window leaves after the sidebar and margins. An over-wide table
+  does not error, it clips the Actions column, so the budget is asserted.
+- `the_body_text_is_larger_than_egui_default` — body > 16, rows >= 34, default
+  zoom >= 1.1. A silent regression to the default 14 fails.
+
+---
+
+## D-11. The controls are tested by being clicked, not only by being rendered
+
+A screen can render a button wired to nothing. The first version of the screen
+suite asserted only what each screen *showed*, which proves the read side and
+says nothing about whether pressing anything does what it looks like it does.
+
+Eight tests now drive the real widgets through the real harness and assert what
+the app then did:
+
+| Click | Asserted |
+|---|---|
+| a status tab | the filter state changed **and** the non-matching row left the table |
+| the Company header | the two rows swapped vertical order (by their actual rects, not by a flag) |
+| a row's Report | exactly one `report` request for **that** row, and `screen == Report(n)` |
+| Start | exactly one `run` call carrying the chosen kind, input and CLI, and `run.running` |
+| a run kind | the kind, the input label and the extra brief field all followed |
+| the search box, then typing | the text reached the filter state and narrowed the table |
+| the follow-up dialog's Save | exactly one `followups`/`log` write, with the dialog's company, channel, contact and note |
+| Config's Save the profile | a `setProfile` patch of the fields shown — never a replace |
+
+Two things worth recording about how they are written. Typing needs focus, so
+the click that focuses a field is part of the interaction rather than a
+workaround. And the follow-up dialog's note is set through its state rather than
+typed: that screen has three text inputs, so picking one by role order would
+test the picker instead of the plumbing — typing-into-a-field-reaching-state is
+already proven by the search-box test, and what the dialog test adds is that its
+fields reach the *write*.
+
+---
+
+## D-12. Three CLIs, measured — and what the measurements changed
+
+The client is for one person on one machine, and that machine runs `pi`,
+`hermes` and `opencode2`. Those three were probed directly, then a full
+evaluation was attempted through the bridge for each, against a throwaway
+fixture.
+
+### `pi` — blocked by the account, not the app
+
+```
+$ pi --no-session -p "Reply with exactly: PI_OK"
+401 {"type":"authentication_error","code":"api_key_expired", ...}
+```
+
+Through the app, in a few seconds:
+
+> The CLI exited with an error — is it installed and authenticated?
+> (401: {… "code":"api_key_expired", "message":"This API key has expired. Create a new API key in OpenCode Console …"})
+
+**Verdict: the transport is fine; the key is expired.** The honesty gate did its
+job — the stderr snippet reaches the screen, and the generic classifier's
+`api[ -]?key` term is what surfaced it. Nothing to fix here.
+
+### `hermes` — works, and says nothing while it works
+
+Direct probe: `hermes chat -q … --oneshot -Q --no-restore-cwd` answered
+`HERMES_OK` in seconds. A full evaluation then ran **742 s and was cut off by
+the app's own 740 s budget**, having streamed **zero text events** — one status
+line and one timeout notice. `-Q` buffers stdout until the run finishes, so a
+CLI that is thinking hard is indistinguishable from one that has hung.
+
+**Verdict: the wiring is right and the CLI is slower than the budget, silently.**
+Neither is something the app may paper over: the budget is the core's
+(`killMsForKind`), shared with the web app, and inventing a bigger one here
+would be exactly the second behaviour this client exists not to have.
+
+### `opencode2` — a separate binary the shared table did not know
+
+`opencode2` is not a version select on `opencode`: it is its own executable
+(`/usr/local/bin/opencode2`, "OpenCode 2.0 preview") with its own subcommands and
+flags. `web/src/lib/clis.ts` had no entry for it, so **neither client could drive
+it** — the picker did not offer it and the run would have 404'd.
+
+Now added to the shared table (`bin: "opencode2"`, `args: (p) => ["run", p]`,
+plain text like `opencode` above it, no parser needed) with a guard in
+`web/tests/lib/clis-coverage.test.mjs` that names it explicitly and asserts it
+did not shadow the v1 entry.
+
+A full evaluation then produced two text events — it started reading the mode
+file — and **the CLI exited on its own at 300.5 s, twice, exactly**, before
+emitting a report. Not the app's budget (740 s) and not a timeout event: the
+process ended.
+
+**Verdict: driveable, but it will not finish an evaluation inside its own five
+minutes.**
+
+### What the three runs changed in the app
+
+Two things, both from watching real output rather than imagining it:
+
+1. **A silent run now says it is silent.** The run screen shows `elapsed 4m 12s`
+   and, past 15 s without an informative event, a `no output for 2m 08s` pill.
+   A keepalive deliberately does not reset that clock — it proves the transport
+   is alive and says nothing about the agent. Before this, `hermes`'s twelve
+   minutes and `opencode2`'s five both looked exactly like a hang.
+2. **The app picks a CLI that exists.** On load, a saved id that names an
+   uninstalled CLI is replaced by the engine's own `defaultCliId`
+   (`pickDefaultInstalled`, shared with the web app). Previously a fresh install
+   opened with Start disabled and "pick one in Config" on a machine where four
+   CLIs were installed. Config now lists installed CLIs first and folds the rest
+   behind `Not installed (n)`.
+
+Tests: `a_keepalive_does_not_count_as_the_agent_speaking`,
+`a_silent_run_says_so_instead_of_only_saying_running`,
+`a_quiet_run_under_the_threshold_does_not_nag`,
+`durations_read_the_way_a_person_would_say_them`,
+`a_missing_saved_cli_is_replaced_by_one_that_is_installed`,
+`an_installed_saved_cli_is_left_alone`,
+`loading_the_app_selects_a_usable_cli_without_a_visit_to_config`,
+`config_shows_the_installed_clis_first_and_folds_the_rest_away`.
+
+### Note on distribution
+
+This client is for one person and is not being distributed. The manifest
+registration and `.npmignore` entry that the Goal required stay in place because
+the updater's coverage guard checks them, but nothing else will be spent on
+packaging, and the `web/src/lib/` carve-out exists only so an install could load
+the engine — on this machine the checkout is already there.
+
+---
+
+## D-13. Open item: the acceptance walkthrough
+
+The Goal's last completion item is the user's own walkthrough of the capability
+matrix against their real data. That is theirs to give, so it is recorded as
+outstanding rather than assumed.
+
+**What was done to make it start from a known state.** `tests/live_data.rs`
+decodes the real data root through both clients' boundary:
+
+```
+$ CAREER_OPS_REAL_ROOT_TESTS=1 cargo test --test live_data -- --nocapture
+bootstrap: 15 applications, 59 pending, 15 reports, 6 PDFs, 10 states, 10 CLIs
+pipeline: 15 rows, 59 inbox
+reports: 15 rows decoded
+followups: available=true, 2 entries, 0 due, 0 logged
+config: 10 CLIs known, data root /home/…/career-ops
+digest unchanged: the live root was not modified
+```
+
+Every application's report decodes, the bootstrap count and the pipeline row
+count agree (the two reads are of one tracker), and the data root's digest is
+identical before and after — so running the app, or that suite, moves nothing.
+Opening the release build against the real root was checked the same way: same
+digest, and a clean stderr.
+
+**What remains.** Launching it and clicking through the matrix:
+
+```bash
+cargo run --release
+```
+
+Any row that does not behave as the matrix says is the next unit of work — and
+the matrix row, not the code, is what gets corrected first, since the matrix is
+the claim under test.

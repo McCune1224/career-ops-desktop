@@ -1,0 +1,252 @@
+//! The run screen: evaluate a pasted posting, tailor the CV, draft a cover
+//! letter — with the same streamed progress the web app shows.
+
+use egui::{Color32, Margin, RichText};
+
+use crate::app::{CareerOpsApp, LogKind, RunKind};
+use crate::theme::{self, Palette};
+use crate::views::{frame, pill, section};
+
+/// Draw the run screen.
+pub fn ui(ui: &mut egui::Ui, app: &mut CareerOpsApp) {
+    let t = theme::palette(ui.ctx());
+    frame(
+        ui,
+        "Run",
+        Some("The agent CLI does the work; the app never writes what the agent produced."),
+        app,
+        |ui, app| {
+            form_card(ui, app, t);
+            ui.add_space(14.0);
+            progress_card(ui, app, t);
+        },
+    );
+}
+
+/// The kind picker and the input: the part of the screen you act on.
+fn form_card(ui: &mut egui::Ui, app: &mut CareerOpsApp, t: Palette) {
+    theme::card(ui, t).show(ui, |ui| {
+        ui.horizontal_wrapped(|ui| {
+            for kind in [RunKind::Evaluate, RunKind::Pdf, RunKind::Cover] {
+                let selected = app.run.kind == Some(kind);
+                let (fill, stroke, color) = if selected {
+                    (t.tint(t.accent).gamma_multiply(2.4), t.accent, t.fg)
+                } else {
+                    (Color32::TRANSPARENT, t.border, t.fg_muted)
+                };
+                let button = egui::Button::new(
+                    RichText::new(kind.label())
+                        .text_style(theme::meta())
+                        .color(color),
+                )
+                .fill(fill)
+                .stroke(egui::Stroke::new(1.0, stroke))
+                .corner_radius(egui::CornerRadius::same(6))
+                .min_size(egui::vec2(0.0, 26.0));
+                if ui.add(button).clicked() {
+                    app.run.kind = Some(kind);
+                }
+            }
+        });
+
+        ui.add_space(8.0);
+        if let Some(kind) = app.run.kind {
+            ui.label(RichText::new(kind.hint()).color(t.fg_muted));
+        }
+        ui.add_space(10.0);
+
+        ui.label(
+            RichText::new(match app.run.kind {
+                Some(RunKind::Evaluate) => "Job URL or posting text",
+                Some(RunKind::Pdf) | Some(RunKind::Cover) => "Report number or company",
+                None => "Input",
+            })
+            .text_style(theme::meta())
+            .color(t.fg_muted),
+        );
+        ui.add(
+            egui::TextEdit::singleline(&mut app.run.input)
+                .desired_width(f32::INFINITY)
+                .hint_text("https://…"),
+        );
+
+        if matches!(app.run.kind, Some(RunKind::Cover)) {
+            ui.add_space(8.0);
+            ui.label(
+                RichText::new("Brief (what the letter should say)")
+                    .text_style(theme::meta())
+                    .color(t.fg_muted),
+            );
+            ui.add(
+                egui::TextEdit::multiline(&mut app.run.brief)
+                    .desired_width(f32::INFINITY)
+                    .desired_rows(3),
+            );
+        }
+
+        ui.add_space(12.0);
+        ui.horizontal(|ui| {
+            let cli = app
+                .state
+                .bootstrap
+                .as_ref()
+                .and_then(|b| b.clis.iter().find(|c| c.id == app.settings.cli_id).cloned());
+            let ready = cli.as_ref().map(|c| c.installed).unwrap_or(false);
+            let can_start = app.run_ready();
+
+            if crate::views::primary_button(ui, "Start", can_start).clicked() {
+                start(app);
+            }
+            if app.run.running {
+                ui.spinner();
+                ui.label(RichText::new("Running…").color(t.accent));
+                if let Some((elapsed, silent)) = app.run_clock(ui.input(|i| i.time)) {
+                    ui.label(
+                        RichText::new(format!("elapsed {}", short_duration(elapsed)))
+                            .monospace()
+                            .text_style(theme::meta())
+                            .color(t.fg_muted),
+                    );
+                    if silent >= crate::app::SILENCE_NOTICE_AFTER_SECS {
+                        // A silent CLI and a hung one look the same from here.
+                        // Say which it is: the transport is answering, the
+                        // agent is not — and that is normal for a CLI that
+                        // buffers until it is finished.
+                        pill(ui, &format!("no output for {}", short_duration(silent)), t.warn);
+                    }
+                }
+            }
+            if !app.run.running
+                && !app.run.log.is_empty()
+                && crate::views::ghost_button(ui, "Clear the log").clicked()
+            {
+                app.run.log.clear();
+                app.run.finished = false;
+                app.run.error = None;
+                app.run.report_n = None;
+                app.run.started_at = None;
+                app.run.last_output_at = None;
+            }
+
+            ui.label(
+                RichText::new(match &cli {
+                    Some(cli) if cli.installed => format!("CLI: {}", cli.name),
+                    _ => "No usable CLI is selected — pick one in Config.".to_string(),
+                })
+                .text_style(theme::meta())
+                .color(if ready { t.fg_muted } else { t.warn }),
+            );
+        });
+
+        if let Some(error) = &app.run.error {
+            ui.add_space(8.0);
+            ui.horizontal_wrapped(|ui| {
+                pill(ui, "error", t.bad);
+                ui.label(RichText::new(error).color(t.bad));
+            });
+        }
+        if let Some(report_n) = app.run.report_n.clone() {
+            ui.add_space(8.0);
+            ui.horizontal(|ui| {
+                pill(ui, "saved", t.good);
+                ui.label(
+                    RichText::new(format!("report #{report_n}"))
+                        .monospace()
+                        .color(t.fg),
+                );
+                if crate::views::ghost_button(ui, "Open it").clicked() {
+                    app.open_report(&report_n);
+                }
+            });
+        }
+    });
+}
+
+/// The streamed log: the other half of the screen, and the reason it exists.
+fn progress_card(ui: &mut egui::Ui, app: &CareerOpsApp, t: Palette) {
+    section(ui, "Progress");
+    theme::card(ui, t).inner_margin(Margin::symmetric(14, 12)).show(
+        ui,
+        |ui| {
+            if app.run.log.is_empty() {
+                ui.label(
+                    RichText::new("Nothing yet. Start a run and its steps appear here.")
+                        .color(t.fg_muted),
+                );
+                return;
+            }
+            egui::ScrollArea::vertical()
+                .max_height(280.0)
+                .auto_shrink([false, false])
+                .stick_to_bottom(true)
+                .show(ui, |ui| {
+                    for line in &app.run.log {
+                        let color = match line.kind {
+                            LogKind::Tool => t.info,
+                            LogKind::Status => t.fg,
+                            LogKind::Error => t.bad,
+                            LogKind::Done => t.good,
+                            LogKind::Text => t.fg_muted,
+                        };
+                        let text = RichText::new(&line.text).color(color);
+                        let text = match line.kind {
+                            LogKind::Status | LogKind::Done => text.strong(),
+                            LogKind::Tool => text.monospace(),
+                            _ => text,
+                        };
+                        ui.label(text);
+                    }
+                });
+        },
+    );
+}
+
+/// "45s" / "2m 14s", for a clock a person reads at a glance.
+pub fn short_duration(seconds: f64) -> String {
+    let total = seconds.max(0.0).round() as u64;
+    if total < 60 {
+        format!("{total}s")
+    } else if total < 3600 {
+        format!("{}m {:02}s", total / 60, total % 60)
+    } else {
+        format!("{}h {:02}m", total / 3600, (total % 3600) / 60)
+    }
+}
+
+/// Hand the run to the engine.
+pub fn start(app: &mut CareerOpsApp) {
+    let Some(kind) = app.run.kind else { return };
+    let input = app.run.input.trim().to_string();
+    if input.is_empty() {
+        return;
+    }
+    app.run.log.clear();
+    app.run.error = None;
+    app.run.finished = false;
+    app.run.report_n = None;
+    let brief = if app.run.brief.trim().is_empty() {
+        None
+    } else {
+        Some(app.run.brief.clone())
+    };
+    match app
+        .backend
+        .start_run(kind.id(), &input, &app.settings.cli_id, brief.as_deref())
+    {
+        Ok(id) => {
+            let now = app.run_now;
+            app.run.running = true;
+            app.run.request_id = Some(id);
+            app.run.started_at = Some(now);
+            app.run.last_output_at = Some(now);
+            app.run.log.push(crate::app::LogLine {
+                text: format!("Started the {} run…", kind.label()),
+                kind: LogKind::Status,
+            });
+        }
+        Err(e) => {
+            app.run.running = false;
+            app.run.error = Some(format!("could not start the run: {e}"));
+        }
+    }
+}

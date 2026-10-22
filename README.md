@@ -1,0 +1,219 @@
+# career-ops desktop
+
+A native Linux desktop client for
+[career-ops](https://github.com/career-ops-hq/career-ops): the daily loop
+— your tracker, your reports, your runs, your CV, your follow-ups — in an egui
+window, on top of the same Node engine the web UI and the CLI use.
+
+**No webview.** No Electron, no Tauri, no wry, no embedded browser, no WebKit,
+no CEF. The window is egui painting through OpenGL; the engine is a Node child
+process this app starts and owns.
+
+```bash
+cargo run --release
+```
+
+Needs `cargo` (1.85+) and `node` (22.13+, the same floor the core has). Nothing
+else: no `npm install`, no Next build, no browser.
+
+---
+
+## What it is, in one picture
+
+```
+┌───────────────────────────┐      stdio, NDJSON       ┌──────────────────────────┐
+│  career-ops-desktop       │  ◀────────────────────▶  │  bridge/                 │
+│  Rust + egui + eframe     │   requests + events      │  Node, no listening port │
+└───────────────────────────┘                          └───────────┬──────────────┘
+                                                                   │ imports
+                                                                   ▼
+                                                       ┌──────────────────────────┐
+                                                       │  web/src/lib/**          │
+                                                       │  the web app's own engine │
+                                                       └───────────┬──────────────┘
+                                                                   │ spawns
+                                                                   ▼
+                                             set-status.mjs · merge-tracker.mjs ·
+                                             reserve-report-num.mjs · generate-pdf.mjs
+                                             + the AI CLI the core already drives
+```
+
+There is one implementation of every career-ops rule, and it lives in the
+career-ops checkout, not here. This client is not it. See
+[DECISIONS.md](DECISIONS.md) D-2 for how that is enforced rather than promised.
+
+---
+
+## The look
+
+One visual system, in `src/theme.rs`: a 26/19/16.5/15/13.5 type scale, a
+4/8/12/16/24 spacing rhythm, 36-point table rows, and fifteen semantic colour
+slots with a light and a dark value. A screen names `palette().good`, never a
+green.
+
+**It is adjustable, because a fixed scale cannot know your display.** `Ctrl +`
+and `Ctrl -` zoom, `Ctrl 0` resets to 115%, and the sidebar's `A-` / `A+` do the
+same with the percentage shown. The choice is saved next to the theme, in
+`~/.config/career-ops-desktop/settings.json`. `Light mode` / `Dark mode` in the
+top bar switches the theme.
+
+**Your three CLIs.** `pi`, `hermes` and `opencode2` are all driveable. Measured
+on this machine: `hermes` works and buffers its output (so a long run is silent —
+the run screen now names the silence and counts the elapsed time); `opencode2` is
+OpenCode 2.0 preview, a separate binary that was missing from the shared CLI
+table and is now in it; `pi` is blocked by an expired API key, which the app
+reports in seconds with the provider's own message. A full evaluation is a
+12-minute job for a slow CLI and the core's budget is 740 s — see
+`DECISIONS.md` D-12 for the numbers.
+
+If the window opens smaller than you want, that is your window manager: this one
+tiles every window to a quarter of the display, and no size the app requests
+changes it. Toggle the window to floating, or maximize it, and the layout follows
+(see `DECISIONS.md` D-10).
+
+## The screens
+
+| Screen | What it does |
+|---|---|
+| **Today** | Tracker and inbox counts, what is due, setup state, a way into a run. |
+| **Pipeline** | Every tracker row, sortable by #/company/role/score/status/date, filterable by canonical status, by a score floor and by free text, with an inline status control that writes through `set-status.mjs`. Report and Posting actions per row. |
+| **Report** | The evaluation in full — score, legitimacy, verdict, the rendered markdown body — plus "Open the source posting" and "Open the tailored CV / cover letter". |
+| **Run** | Evaluate a pasted JD or URL, tailor the CV, or draft a cover letter, with the web app's streamed progress (text, tool calls, status lines, errors, the saved report number). |
+| **CV** | Edit `cv.md` with a live preview; save atomically with a backup. |
+| **Follow-ups** | What the core's cadence calculator says is due, the logged history, and a dialog that appends to `data/follow-ups.md` under the same lock the web route uses. |
+| **Config** | Choose the AI CLI, tune the follow-up cadence, edit the candidate details in `config/profile.yml`, and see which data root and checkout the app is reading. |
+
+[CAPABILITY-MATRIX.md](CAPABILITY-MATRIX.md) maps every one of those to the web
+route it replaces, the desktop surface that implements it, and the test that
+proves it.
+
+Two more documents turn the whole product, not just this client, into a backlog:
+
+- **[FEATURES.md](FEATURES.md)** — every capability career-ops has, 152 rows
+  across 18 epics, each with its evidence, its status in this client, and an
+  acceptance check. This is the list issues are cut from.
+- **[ROADMAP.md](ROADMAP.md)** — what to do first, kanban columns and WIP
+  limits, the definition of done, and issue templates.
+
+---
+
+## Named gaps
+
+Deliberately not built in this version. Each is a real web surface; a partial
+version would be worse than none, because the web app's guards exist to stop
+exactly the half-done cases.
+
+- **Apply form prefill** — `/apply`, `/api/apply/*`.
+- **Agent chat** — the assistant console, `/api/assistant`, chat history.
+- **Explore and scan** — `/explore`, `/api/explore*`, "new this week".
+- **CV studio** — `/api/cv-studio/[n]`.
+- **Scheduled scans** — `/scheduled-scans`, `/api/scheduled-jobs*`, `/api/scheduler`.
+- **Analytics** — `/analytics`, `/api/stats`, `/api/patterns`, the Sankey.
+- **Documents browser**, **Portals health check**, **offer compare**, **tracker
+  row deletion**, **memory / personalization editing** — outside the Goal's
+  daily loop.
+- **PDF pages rendered inside the window** — a browser capability. The PDFs are
+  handed to your own viewer instead (DECISIONS.md D-6).
+
+---
+
+## What it will never do
+
+- **Never submits an application.** There is no code path that fills or sends an
+  application form.
+- **Never moves data off the machine**, beyond the AI CLI calls the core already
+  makes. The bridge is a child process over pipes; it listens on nothing.
+- **Never writes a second source of truth.** Every tracker or data write goes
+  through `set-status.mjs`, `merge-tracker.mjs`, `reserve-report-num.mjs`,
+  `persist-evaluation-report.mjs`, `generate-pdf.mjs` or the same
+  atomic-write-plus-backup helper the web routes use. See DECISIONS.md D-4.
+- **Never reimplements the engine.** The parity suite fails if it starts to.
+
+---
+
+## Working on it
+
+```bash
+cargo test                    # the Rust side: screens, payloads, dependency audit, live data
+cargo run --release           # the app
+
+# The dependency audit on its own — lockfile + ldd, with the full library list:
+node dev/dependency-audit.mjs
+
+# The Node side of the client: engine parity + the live bridge, against a
+# throwaway fixture:
+node --test tests/desktop-*.test.mjs
+```
+
+Before walking the capability matrix against your own data, check that the
+client's types match what your engine actually sends. This is read-only and
+asserts your data root is byte-identical afterwards:
+
+```bash
+CAREER_OPS_REAL_ROOT_TESTS=1 cargo test --test live_data -- --nocapture
+```
+
+### Developing against a fixture, not your own data
+
+The app reads and writes the career-ops data root, so development must not point
+it at real data:
+
+```bash
+node dev/make-fixture.mjs /tmp/career-ops-fixture
+CAREER_OPS_ROOT=/tmp/career-ops-fixture cargo run --release
+```
+
+`make-fixture.mjs` **copies** your user files (so a write cannot escape) and
+**symlinks** the core's scripts (so a script edit is visible with no re-copy).
+You can also set the data root in `~/.config/career-ops-desktop/settings.json`,
+which is where the app keeps its own preferences — not in `config/profile.yml`
+(DECISIONS.md D-7).
+
+### How the screens are tested
+
+`tests/screens.rs` renders one screen at a time inside an `egui_kittest` harness
+and asserts on the widgets it produced — and, for six of them, clicks the control
+and asserts what the app then did, because a screen can render a button wired to
+nothing and only a click can tell the difference. No window, no display server, no bridge
+process, no data root: the engine is a `FakeBackend` answering with the exact
+JSON shapes the bridge sends. If a screen stops showing what the web app shows
+for the same capability, one of those tests fails.
+
+`tests/desktop-bridge-ops.test.mjs` is the other half: it starts the real bridge
+against a real fixture and drives it over its real protocol.
+
+---
+
+## Layout
+
+```
+career-ops-desktop/
+├── Cargo.toml
+├── src/
+│   ├── main.rs          the binary: opens the window
+│   ├── lib.rs           the library
+│   ├── shell.rs         the frame, the sidebar, the screen router
+│   ├── app.rs           app state, and every action a screen can take
+│   ├── bridge.rs        the stdio client for the Node bridge
+│   ├── backend.rs       the engine trait (+ the fake the tests use)
+│   ├── model.rs         the bridge's JSON, typed
+│   ├── markdown.rs      reports and CVs → egui
+│   ├── settings.rs      the app's own preferences
+│   └── views/           one module per screen
+├── bridge/
+│   ├── server.mjs       the stdio loop
+│   ├── dispatch.mjs     the op table
+│   ├── engine.mjs       THE import surface onto web/src/lib
+│   ├── alias-hook.mjs   the web app's "@/…" alias, for plain Node
+│   └── ops/             one module per capability area
+├── tests/               headless screen tests, and the Node suites
+│   ├── screens.rs       one screen at a time, in a kittest harness
+│   ├── payloads.rs      can the client decode what the engine sends
+│   ├── no_webview.rs    the "no webview" claim, in the lockfile and in ldd
+│   ├── live_data.rs     the real data root, read-only, opt-in
+│   ├── desktop-engine-parity.test.mjs
+│   ├── desktop-bridge-ops.test.mjs
+│   ├── desktop-run-e2e.test.mjs
+│   └── helpers/         the fixture builder the Node suites share
+└── dev/                 fixture builder, dependency audit
+```

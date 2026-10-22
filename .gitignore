@@ -1,0 +1,9 @@
+# The Rust build tree. Never committed; rebuilt on demand.
+/target/
+
+# Node's own leftovers, if anything ever runs npm here.
+node_modules/
+
+# Editor and OS noise.
+.DS_Store
+*.swp

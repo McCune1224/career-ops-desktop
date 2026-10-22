@@ -1,0 +1,41 @@
+[package]
+name = "career-ops-desktop"
+version = "0.1.0"
+edition = "2021"
+description = "Native desktop client for career-ops — the daily loop, on top of the same Node engine the web UI uses"
+license = "MIT"
+publish = false
+
+[lib]
+name = "career_ops_desktop"
+path = "src/lib.rs"
+
+[[bin]]
+name = "career-ops-desktop"
+path = "src/main.rs"
+
+[dependencies]
+# eframe/egui render with OpenGL (glow) on X11/Wayland. There is no webview
+# anywhere in this dependency tree: no wry, no tauri, no webkit, no CEF.
+eframe = { version = "0.37", default-features = false, features = [
+    "default_fonts",
+    "glow",
+    "wayland",
+    "x11",
+    "accesskit",
+    "clipboard",
+    "links",
+] }
+egui = "0.37"
+egui_extras = { version = "0.37", default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[dev-dependencies]
+# The official egui test harness: runs a screen headlessly and lets a test
+# assert on the widgets it produced. No display server needed.
+egui_kittest = { version = "0.37", default-features = false, features = ["eframe"] }
+
+
+[profile.release]
+opt-level = 2
