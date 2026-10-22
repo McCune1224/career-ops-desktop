@@ -79,7 +79,7 @@ The things that must be true before any other epic is usable.
 | E00-S02 | Read and validate `config/profile.yml` against the schema | `validate-profile.mjs` | done | `the profile validator surfaces a broken profile as an error` | S |  |
 | E00-S03 | Edit the candidate details in the profile, merge-safely | `POST /api/profile`, `web/src/lib/profile-patch.mjs` | done | `saving_the_profile_from_config_merges_rather_than_replaces` | S | E00-S02 |
 | E00-S04 | Configure the output language and market mode set | `profile-language.mjs`, `modes/<market>/`, `web/src/lib/profile-keywords.mjs` | done | `the profile's language and its market mode set are read` | M | E03-S01 |
-| E00-S05 | Edit the personalization file (`modes/_profile.md`) without destroying its structure | `POST /api/personalization`, `web/src/lib/personalization-file.mjs` | done | `the personalization file is edited one section at a time` | M |  |
+| E00-S05 | Edit the personalization file (`modes/_profile.md`) without destroying its structure | `POST /api/personalization`, `web/src/lib/personalization-file.mjs` | done | `the_config_screen_edits_one_personalization_section`, `the personalization sections come back with their bodies, so one can be edited` | M |  |
 | E00-S06 | Seed a first-run profile from the shipped example | `config/profile.example.yml` | done | `a first save on a fresh install seeds the profile and never overwrites one` | S |  |
 | E00-S07 | Update the system layer without touching user data | `update-system.mjs`, `modes/update.md` | gap | Not wanted natively; the CLI owns it | S | |
 | E00-S08 | Detect the installed AI CLIs and pick a usable one | `web/src/lib/clis.ts`, `web/src/lib/cli-pick.mjs` | done | `loading_the_app_selects_a_usable_cli_without_a_visit_to_config` | S | |
@@ -145,7 +145,7 @@ uses this path unchanged, so most rows are about surfaces rather than plumbing.
 | E04-S03 | Choose a CV template, including a named variant | `cv-templates.mjs`, `templates/`, `web/src/lib/core/cv-template.mjs` | done | `the CV template setting changes the template the run fills` | M | E04-S02 |
 | E04-S04 | Import a CV from pasted text or a document, as a proposal | `POST /api/cv/ingest`, `modes/intake.md`, `intake.mjs` | done | `the intake lists the documents it found, and proposes nothing by itself` | L | E04-S01 |
 | E04-S05 | Verify a tailored CV's claims against the source files | `verify-cv-facts.mjs` | done | `the CV's claims are checked against the source files` | L | E04-S02 |
-| E04-S06 | Verify the tailored CV kept its structure and order | `verify-cv-structure.mjs`, `cv-experience-order.mjs`, `cv-title-check.mjs` | done | `the CV's structure is checked against the file the user wrote` | M | E04-S02 |
+| E04-S06 | Verify the tailored CV kept its structure and order | `verify-cv-structure.mjs`, `cv-experience-order.mjs`, `cv-title-check.mjs` | done | `a tailored CV whose roles are out of order is reported before it is rendered`, `the CV's structure is checked against the file the user wrote` | M | E04-S02 |
 | E04-S07 | Produce an ATS-parseable copy alongside the styled PDF | `ats-payload.mjs`, `verify-ats.mjs`, `modes/ats.md` | gap | Named as out of scope for the daily loop; the CLI path remains | M | E04-S02 |
 | E04-S08 | Produce a LaTeX CV from a `.tex` template | `build-cv-latex.mjs`, `generate-latex.mjs`, `modes/latex.md` | gap | Out of scope natively; the CLI owns it | L | E04-S02 |
 | E04-S09 | Tailor a hand-maintained `.tex` CV in place | `modes/latex-tex.md`, `patch-latex-content.mjs` | gap | Out of scope natively | M | E04-S08 |
@@ -161,7 +161,7 @@ uses this path unchanged, so most rows are about surfaces rather than plumbing.
 | E05-S01 | Draft a cover letter for one application, with a brief | `modes/cover.md`, `generate-cover-letter.mjs`, `POST /api/run` kind `cover` | done | `the cover run produces a draft letter in the run log`, `report_screen_shows_the_report_and_the_source_posting` | L | E03-S01 |
 | E05-S02 | Choose the letter's tone from a fixed set | `web/src/lib/cover-tones.mjs`, `web/src/lib/cover-brief.mjs` | done | `the_run_screen_offers_the_cover_tones` | S | E05-S01 |
 | E05-S03 | Draft a formal application email, and never send it | `modes/email.md` | done | `a mode run asks the agent to follow the mode file` | M | E02-S03 |
-| E05-S04 | Find the right contact and draft outreach in the channel's limit | `modes/contacto.md`, `contact-extract.mjs`, `contact-lookup.mjs` | done | `the phonebook is read, exported and joined against a company` | L | E02-S03 |
+| E05-S04 | Find the right contact and draft outreach in the channel's limit | `modes/contacto.md`, `contact-extract.mjs`, `contact-lookup.mjs` | done | `the_run_screen_offers_the_outreach_mode` | L | E02-S03 |
 | E05-S05 | Keep a job-search contact list and export it | `contacts.mjs`, `data/contacts.tsv` | done | `the phonebook is read, exported and joined against a company` | M | E05-S04 |
 | E05-S06 | Find a warm introduction through a LinkedIn export | `linkedin-join.mjs`, `data/Connections.csv` | done | `the phonebook is read, exported and joined against a company` | M | E05-S05 |
 | E05-S07 | Match a pasted interview invite to a tracker row | `invite-match.mjs` | done | `a pasted invite is matched to a tracker row` | S | E01-S01 |
@@ -178,7 +178,7 @@ uses this path unchanged, so most rows are about surfaces rather than plumbing.
 | E06-S06 | Seed the first follow-up date when a row turns Applied | `followup-seed.mjs` | done | `a row that turned Applied pins its first follow-up` | S | E01-S03 |
 | E06-S07 | Flag companies still silent after an interview, as a suggestion | `rejection-latency.mjs`, `GET /api/quiet-companies` | done | `the quiet companies are listed with the reason each one is quiet` | M | E01-S01 |
 | E06-S08 | Measure per-company recruiting friction | `process-quality.mjs` | done | `the recruiting friction comes from the interview notes` | M | E06-S07 |
-| E06-S09 | Record an outcome and archive the artifacts | `outcome.mjs`, `modes/outcome.md` | done | `an outcome is recorded through the core and archives the posting` | M | E01-S01 |
+| E06-S09 | Record an outcome and archive the artifacts | `outcome.mjs`, `modes/outcome.md` | done | `the_outcomes_screen_proposes_an_outcome_before_recording_it`, `an outcome is recorded through the core and archives the posting` | M | E01-S01 |
 | E06-S10 | Walk an offer's clauses with a lawyer question list | `modes/offer-prep.md` | done | `a mode run asks the agent to follow the mode file` | M | E02-S03 |
 | E06-S11 | Draft negotiation points anchored in a verified achievement | `negotiation-roi.mjs` | done | `a negotiation figure survives only if the CV says it too` | M | E04-S05 |
 | E06-S12 | Analyse the salary gap between wanted, advertised and actual | `salary-gap.mjs`, `data/salary-observations.tsv` | done | `the salary gap is wanted against advertised against actual` | M | E01-S01 |
@@ -286,7 +286,7 @@ uses this path unchanged, so most rows are about surfaces rather than plumbing.
 | ID | Capability | Evidence | Desktop | Acceptance | Size | Deps |
 |---|---|---|---|---|---|---|
 | E15-S01 | List, enable, disable and audit plugins | `plugins.mjs`, `plugin-audit.mjs`, `config/plugins.yml` | done | `the plugin list is read and a plugin can be disabled` | M |  |
-| E15-S02 | Install the shipped plugin set | `plugins-registry/` (11), `plugin-install.mjs` | done | `the plugin list is read and a plugin can be disabled` | M | E15-S01 |
+| E15-S02 | Install the shipped plugin set | `plugins-registry/` (11), `plugin-install.mjs` | done | `the_config_screen_confirms_a_plugin_install`, `a plugin install is confirmed, and a preview is not an install` | M | E15-S01 |
 | E15-S03 | Route interview invites to a calendar | `plugins-registry/outlook-interviews.json`, `plugins-registry/google-calendar.json` | gap | Out of scope natively | M | E15-S02 |
 | E15-S04 | Capture alerts from a watchlist | `plugins-registry/linkedin-alerts.json` | gap | Out of scope natively | M | E15-S02 |
 

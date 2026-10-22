@@ -26,8 +26,10 @@
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import {
   careerOpsRoot,
+  rootScript,
   readMemory,
   findReportFile,
   readInbox,
@@ -123,6 +125,41 @@ function parseBrief(raw) {
     return JSON.parse(trimmed);
   } catch {
     return null;
+  }
+}
+
+/**
+ * The tailored CV's job order, against cv.md's.
+ *
+ * The engine's own guard, run on the HTML the agent produced and BEFORE the
+ * PDF is rendered: a CV whose roles are out of order is not a PDF the user
+ * should be told is ready.
+ *
+ * `validateCvExperienceOrder()` returns undefined when the order is fine and
+ * THROWS when it is not, so a throw is the violation and a quiet return is the
+ * pass. A guard that cannot read the CV is not a pass either.
+ *
+ * @param {string} html
+ * @returns {Promise<{ok: boolean, message: string}>}
+ */
+async function checkCvOrder(html) {
+  const script = rootScript("cv-experience-order");
+  if (!fs.existsSync(script)) {
+    // An older checkout without the guard is not a reason to refuse a render.
+    return { ok: true, message: "" };
+  }
+  const { validateCvExperienceOrder } = await import(pathToFileURL(script).href);
+  try {
+    validateCvExperienceOrder(html);
+    return { ok: true, message: "" };
+  } catch (err) {
+    return {
+      ok: false,
+      message:
+        err instanceof Error && err.message
+          ? err.message
+          : "The tailored CV's roles are not in cv.md's order.",
+    };
   }
 }
 
@@ -437,7 +474,11 @@ async function runOne(params, ctx) {
       close({ ok: false, kind, error: e.message });
     });
 
-    child.on("close", (code) => {
+    // The body is async because the pdf branch checks the tailored CV's order
+    // against cv.md before it renders. A rejection inside an async listener
+    // would leave the run's promise un-settled and the screen waiting
+    // forever, so the listener is registered with a catch that closes it.
+    const handleClose = async (code) => {
       if (stderrBuf) { flagStderrLine(stderrBuf); stderrBuf = ""; }
       if (closed) return close({ ok: false, kind, error: "client gone" });
       if (killedByTimeout) {
@@ -477,6 +518,14 @@ async function runOne(params, ctx) {
         } else {
           sendWarnings(envelope.warnings);
           if (saveCv(pdfPaths, envelope)) {
+            // ORDER FIRST, render second: the engine's guard reads the HTML
+            // the agent produced, and a reordered CV is reported to the user
+            // before a PDF exists for them to send.
+            const order = await checkCvOrder(envelope.html);
+            if (!order.ok) {
+              send({ type: "error", msg: order.message.slice(0, 200) });
+              return close({ ok: false, kind, error: "out-of-order CV" });
+            }
             pdfRenderPromise = renderPdf(pdfPaths, envelope.format);
             return;
           }
@@ -515,6 +564,14 @@ async function runOne(params, ctx) {
         send({ type: "done", tokens: lastTokens, costUsd: lastCostUsd });
       }
       close({ ok: true, kind, tokens: lastTokens, costUsd: lastCostUsd });
+    };
+
+    child.on("close", (code) => {
+      handleClose(code).catch((err) => {
+        if (closed) return;
+        send({ type: "error", msg: String(err?.message ?? err).slice(0, 200) });
+        close({ ok: false, kind, error: "the run crashed while finishing" });
+      });
     });
   });
 }

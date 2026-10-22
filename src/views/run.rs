@@ -68,7 +68,7 @@ fn form_card(ui: &mut egui::Ui, app: &mut CareerOpsApp, t: Palette) {
                 }
                 Some(RunKind::Practice) => "A question, or a report number",
                 Some(RunKind::Debrief) => "What happened in the interview",
-                Some(RunKind::RedFlag) => "The company name",
+                Some(RunKind::RedFlag) | Some(RunKind::Contacto) => "The company name",
                 Some(RunKind::OfferPrep) => "The offer text",
                 Some(RunKind::FixPortal) => "The company name",
                 None => "Input",

@@ -99,6 +99,29 @@ test("every row names a check that exists in this repository", () => {
   assert.deepEqual(missing, [], missing.join("\n"));
 });
 
+test("every check CAPABILITY-MATRIX.md names exists in this repository", () => {
+  // The matrix is the document the walkthrough follows, so a check it names
+  // that does not exist sends the reader after a phantom. Every backticked
+  // name in a Proof column must be a test this repository has.
+  const matrix = fs.readFileSync(path.join(ROOT, "CAPABILITY-MATRIX.md"), "utf8");
+  const missing = [];
+  for (const line of matrix.split("\n")) {
+    if (!line.startsWith("|") || !/\|\s*Proof\s*\|/.test(line)) {
+      if (!/^\|\s*\d+\.\d+\s*\|/.test(line)) continue;
+    }
+    const cells = line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|");
+    const proof = cells[cells.length - 1] ?? "";
+    for (const match of proof.matchAll(/`([^`]+)`/g)) {
+      const name = match[1].trim();
+      // Only names that look like a test: a path or a script is not one.
+      if (!/[ _]/.test(name) && !name.startsWith("a_") && !name.startsWith("the_")) continue;
+      if (name.includes("/") || name.includes(".mjs") || name.includes(".rs")) continue;
+      if (!names.has(name)) missing.push(name);
+    }
+  }
+  assert.deepEqual([...new Set(missing)], [], `the matrix names checks that do not exist: ${[...new Set(missing)].join(", ")}`);
+});
+
 test("the counting table matches the rows", () => {
   const counts = new Map();
   for (const row of rows) {

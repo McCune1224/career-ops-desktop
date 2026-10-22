@@ -1163,3 +1163,61 @@ test("every core maintenance tool is reachable and reports what it did", async (
     "a preview must leave portals.yml byte-identical",
   );
 });
+
+test("the personalization sections come back with their bodies, so one can be edited", async (t) => {
+  const fixture = makeFixture();
+  const bridge = startBridge(fixture.root);
+  t.after(() => {
+    bridge.stop();
+    fixture.cleanup();
+  });
+
+  const before = await bridge.call("profile", { action: "state" });
+  assert.equal(before.ok, true, JSON.stringify(before.error));
+  const bodies = before.data.bodies;
+  assert.ok(bodies && typeof bodies === "object", "each section must carry its body");
+  assert.ok(
+    Object.keys(bodies).length > 0,
+    "the shipped template has every section, so every body must be readable",
+  );
+
+  // A section edit lands in ONE section and leaves the others alone.
+  const other = Object.keys(bodies).find((id) => id !== "exitNarrative");
+  const otherBefore = bodies[other];
+  const saved = await bridge.call("profile", {
+    action: "save",
+    section: "exitNarrative",
+    body: "A role that keeps my hands on the systems.",
+  });
+  assert.equal(saved.ok, true, JSON.stringify(saved.error));
+
+  const after = await bridge.call("profile", { action: "state" });
+  assert.match(after.data.bodies.exitNarrative, /keeps my hands on the systems/);
+  assert.equal(
+    after.data.bodies[other],
+    otherBefore,
+    "the other sections must be untouched",
+  );
+});
+
+test("a plugin install is confirmed, and a preview is not an install", async (t) => {
+  const fixture = makeFixture();
+  const bridge = startBridge(fixture.root);
+  t.after(() => {
+    bridge.stop();
+    fixture.cleanup();
+  });
+
+  const preview = await bridge.call("plugins", { action: "install", name: "notion" });
+  assert.equal(preview.ok, true, JSON.stringify(preview.error));
+  assert.equal(
+    preview.data.installed,
+    false,
+    "without a confirmation the core only previews the pinned SHA",
+  );
+  assert.equal(
+    fs.existsSync(path.join(fixture.root, "plugins.local")),
+    false,
+    "a preview must clone nothing",
+  );
+});

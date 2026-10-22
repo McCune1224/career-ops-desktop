@@ -666,3 +666,55 @@ response: the stub-CLI pattern in `tests/desktop-run-e2e.test.mjs` speaks the
 real protocol, and the rest of the suite asserts against the files the core
 wrote. A limit that belongs to the CLI or to the account is recorded in
 `README.md` and left where it is.
+
+---
+
+## D-20. The tailored CV's ORDER is checked before the render; its DESCRIPTORS are checked on the payload the client would send
+
+**Decision.** A `pdf` run checks the HTML the agent produced with the engine's
+own `cv-experience-order.mjs` **before** the PDF is rendered. A CV whose roles
+run oldest-first is reported in the run log and the render is refused; the
+tracker's PDF column is untouched. Separately, the CV screen runs the engine's
+`verify-cv-structure.mjs` over the payload the client builds from `cv.md`, so a
+dropped descriptor or a moved entry in what the client would send is reported.
+
+**Why the descriptor check cannot run on the tailored CV.** `verify-cv-structure.mjs`
+takes the JSON payload `modes/pdf.md` step 17 builds. The web's `pdf` kind never
+builds one: its prompt has the agent fill the template and emit HTML, and the
+agent holds no write tool, so no payload exists at any point the client can
+read. Closing that half needs one of two changes, and both are outside this
+client's remit:
+
+1. the engine's `pdf` kind emits the step-17 payload inside the CV envelope, or
+2. `web/src/lib/run-prompts.mjs` gains a branch that asks for it.
+
+Both are writes to the career-ops checkout, which D-14 forbids. So the order
+half is done at the right moment, the descriptor half is done on the payload
+the client owns, and the limitation is written here rather than papered over.
+
+**What would unblock the descriptor half.** Either change above, as a
+`kind:feature` decision in the career-ops repository. Until then the row's
+acceptance names both checks and says which one covers which half.
+
+---
+
+## D-21. A capability that is a question with an answer needs a button, not a screen
+
+**Decision.** The audit that closed M1 to M5 found three capabilities whose
+surface was a read where the row asked for a write: the outcome form previewed
+and never recorded, the personalization "editor" only listed the sections, and
+the plugin install never confirmed. Each was replaced with the two-step shape
+the maintenance tools already use: a proposal, then an action.
+
+**Why the two steps.** Every one of them changes a user-layer file: the outcome
+archives a posting and moves a tracker row, a personalization save splices the
+user's own profile, and a plugin install clones a third-party repository. The
+user sees what the core would do before it does it, and the second click is
+theirs.
+
+**What the audit also settled.** `plugins install` passes `--confirm` only when
+the caller confirms, and reports `installed: false` for a preview, so a preview
+cannot be mistaken for an install. `cv-experience-order.mjs` is imported as a
+FUNCTION rather than spawned: the run path must not shell out to a core script
+(the persistence guard in `tests/desktop-engine-parity.test.mjs`), and the
+guard is a pure function over the HTML the agent produced.

@@ -406,3 +406,53 @@ test("a CLI that cannot be fenced says so, and is refused a write-capable worker
     "the run op must announce the fencing notice",
   );
 });
+
+test("a tailored CV whose roles are out of order is reported before it is rendered", async (t) => {
+  const fixture = makeFixture();
+  const stubDir = fs.mkdtempSync(path.join(fixture.root, "-stub-"));
+  // A CV envelope whose roles run oldest-first: the engine's own guard must
+  // catch it, and no PDF may be produced for it.
+  const html = [
+    "<!DOCTYPE html>",
+    "<html><body>",
+    '<div class="job-period">01/2020 – 12/2021</div>',
+    '<div class="job-period">01/2024 – Present</div>',
+    "</body></html>",
+  ].join("\n");
+  const script = `#!/usr/bin/env node
+const emit = (obj) => process.stdout.write(JSON.stringify(obj) + "\\n");
+emit({ type: "system", subtype: "init" });
+emit({ type: "stream_event", event: { type: "content_block_delta", delta: { text: "<<cv-html format=\\"a4\\">>\\n" + ${JSON.stringify(html)} + "\\n<</cv-html>>\\n" } } });
+emit({ type: "result", usage: { input_tokens: 10, output_tokens: 5 } });
+`;
+  fs.writeFileSync(path.join(stubDir, "claude"), script, { mode: 0o755 });
+  const bridge = startBridge(fixture.root, stubDir);
+  t.after(() => {
+    bridge.stop();
+    fixture.cleanup();
+  });
+
+  const before = fs.readFileSync(path.join(fixture.root, "data", "applications.md"), "utf-8");
+  const result = await bridge.call("run", { kind: "pdf", input: "1", cliId: "claude" });
+  assert.equal(result.data.ok, false, "an out-of-order CV must not report success");
+
+  const errors = bridge.events
+    .map((entry) => entry.event)
+    .filter((event) => event.type === "error")
+    .map((event) => event.msg)
+    .join(" ");
+  assert.match(
+    errors,
+    /reverse-chronological|not in .*order/i,
+    `the user must be told the order is wrong: ${errors}`,
+  );
+  assert.ok(
+    !errors.includes("<<cv-html>>"),
+    "the envelope markers must not leak into the run log",
+  );
+  assert.equal(
+    fs.readFileSync(path.join(fixture.root, "data", "applications.md"), "utf-8"),
+    before,
+    "the tracker must be untouched",
+  );
+});

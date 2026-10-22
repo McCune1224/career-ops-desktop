@@ -68,8 +68,11 @@ fn record_card(ui: &mut egui::Ui, app: &mut CareerOpsApp, t: Palette) {
                     .desired_width(200.0)
                     .hint_text("note"),
             );
-            if crate::views::primary_button(ui, "Record", !app.outcome.target.trim().is_empty()).clicked() {
-                record(app);
+            if crate::views::ghost_button(ui, "Preview").clicked() {
+                record(app, true);
+            }
+            if crate::views::primary_button(ui, "Record it", !app.outcome.target.trim().is_empty()).clicked() {
+                record(app, false);
             }
         });
         if !app.outcome.output.is_empty() {
@@ -95,13 +98,17 @@ pub const OUTCOME_KINDS: [&str; 7] = [
 ];
 
 /// Record the outcome, through the core's own script.
-fn record(app: &mut CareerOpsApp) {
+///
+/// A preview first and the record second: recording an outcome archives the
+/// posting, writes the journal and moves the tracker row, and the user sees
+/// what the core would do before it does it.
+fn record(app: &mut CareerOpsApp, dry_run: bool) {
     let params = serde_json::json!({
         "action": "record",
         "n": app.outcome.target,
         "type": app.outcome.kind,
         "note": app.outcome.note,
-        "dryRun": true,
+        "dryRun": dry_run,
     });
     match app.backend.call("outcomes", params) {
         Ok(value) => {
@@ -110,7 +117,11 @@ fn record(app: &mut CareerOpsApp) {
                 .and_then(serde_json::Value::as_str)
                 .unwrap_or("")
                 .to_string();
-            app.state.say("previewed the outcome; nothing was written");
+            if dry_run {
+                app.state.say("previewed the outcome; nothing was written");
+            } else {
+                app.state.say("recorded the outcome");
+            }
         }
         Err(e) => app.state.fail(format!("could not record the outcome: {e}")),
     }

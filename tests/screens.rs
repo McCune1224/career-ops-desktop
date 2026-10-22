@@ -1621,3 +1621,68 @@ fn a_missing_engine_checkout_is_one_actionable_sentence() {
     );
     assert!(error.contains("CAREER_OPS_CODE_ROOT"), "and it must say what to do");
 }
+
+#[test]
+fn the_outcomes_screen_proposes_an_outcome_before_recording_it() {
+    let app = app_with(&all_fixtures());
+    let harness = harness_for(app, |ui, app| views::outcomes::ui(ui, app));
+    assert!(
+        shows(&harness, "Preview"),
+        "an outcome is previewed before it is recorded"
+    );
+    assert!(
+        shows(&harness, "Record it"),
+        "and recorded on the second click"
+    );
+}
+
+#[test]
+fn the_config_screen_edits_one_personalization_section() {
+    let mut app = app_with(&all_fixtures());
+    app.state.personalization = Some(vec![
+        career_ops_desktop::app::PersonalizationSection {
+            id: "targetRoles".into(),
+            heading: "## Your Target Roles".into(),
+            state: "template".into(),
+            body: "| Archetype |".into(),
+        },
+        career_ops_desktop::app::PersonalizationSection {
+            id: "exitNarrative".into(),
+            heading: "## Your Exit Narrative".into(),
+            state: "filled".into(),
+            body: "I want a role that keeps my hands on the systems.".into(),
+        },
+    ]);
+    app.personalization_section = "targetRoles".into();
+    let harness = harness_for(app, |ui, app| views::config::ui(ui, app));
+
+    assert!(
+        shows(&harness, "Your Target Roles (template)"),
+        "the sections must be listed with their state"
+    );
+    assert!(
+        shows(&harness, "Save this section"),
+        "one section at a time is the rule"
+    );
+    assert!(
+        shows(&harness, "only this section changes"),
+        "and the screen must say so"
+    );
+}
+
+#[test]
+fn the_config_screen_confirms_a_plugin_install() {
+    let app = app_with(&all_fixtures());
+    let harness = harness_for(app, |ui, app| views::config::ui(ui, app));
+    assert!(shows(&harness, "Add a plugin"));
+}
+
+#[test]
+fn the_run_screen_offers_the_outreach_mode() {
+    let app = app_with(&all_fixtures());
+    let harness = harness_for(app, |ui, app| views::run::ui(ui, app));
+    assert!(
+        shows(&harness, "Draft outreach to a contact"),
+        "the outreach mode must be offered"
+    );
+}

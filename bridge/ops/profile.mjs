@@ -19,6 +19,7 @@ import {
   profileTargetKeywords,
 } from "../engine.mjs";
 import { runCoreScript } from "../core-script.mjs";
+import { SECTIONS, scanHeadings } from "@/lib/personalization.mjs";
 import { BridgeError, parseJsonOutput } from "../util.mjs";
 
 /**
@@ -29,7 +30,12 @@ export async function handle(params) {
   const root = careerOpsRoot();
 
   if (action === "state") {
-    const state = readPersonalizationState(root, path.dirname(rootScript("doctor")));
+    const codeRoot = path.dirname(rootScript("doctor"));
+    const state = readPersonalizationState(root, codeRoot);
+    // The bodies, so a section can be EDITED and not only reported. The
+    // headings are the core's own scan; the client does not decide where a
+    // section starts.
+    const bodies = readSectionBodies(root);
     let profile = {};
     try {
       const yaml = await import("js-yaml");
@@ -40,6 +46,7 @@ export async function handle(params) {
     const language = profile.language ?? {};
     return {
       personalization: state,
+      bodies,
       keywords: profileTargetKeywords(profile),
       language: {
         output: typeof language.output === "string" ? language.output : "en",
@@ -114,6 +121,43 @@ export async function handle(params) {
   }
 
   throw new BridgeError("bad-request", `unknown profile action: ${action}`);
+}
+
+/**
+ * Each section's current body, keyed by its id.
+ *
+ * The split is the core's own `scanHeadings` + `renderSection` pair, so an
+ * edit lands in the section the core thinks it belongs to.
+ *
+ * @param {string} root
+ * @returns {Record<string, string>}
+ */
+function readSectionBodies(root) {
+  const file = path.join(root, "modes", "_profile.md");
+  let text = "";
+  try {
+    text = fs.readFileSync(file, "utf8");
+  } catch {
+    return {};
+  }
+  const { scanHeadings, SECTIONS } = personalizationSections();
+  const { heads } = scanHeadings(text);
+  const bodies = {};
+  for (const section of SECTIONS) {
+    const head = heads.find((h) => h.heading === section.heading);
+    if (!head) continue;
+    bodies[section.id] = text.slice(head.bodyStart, head.end).trim();
+  }
+  return bodies;
+}
+
+/**
+ * The section table and the heading scanner, from the web app's own module.
+ *
+ * @returns {{SECTIONS: Array<{id: string, heading: string}>, scanHeadings: Function}}
+ */
+function personalizationSections() {
+  return { SECTIONS, scanHeadings };
 }
 
 /**

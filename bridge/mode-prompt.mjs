@@ -36,6 +36,7 @@ import { careerOpsRoot, rootScript, readMemory } from "./engine.mjs";
  */
 export const MODE_KINDS = {
   email: { file: "modes/email.md", label: "application email" },
+  contacto: { file: "modes/contacto.md", label: "outreach" },
   "offer-prep": { file: "modes/offer-prep.md", label: "offer clause walk" },
   prep: { file: "modes/interview-prep.md", label: "interview prep pack" },
   plan: { file: "modes/interview/plan.md", label: "interview preparation plan" },

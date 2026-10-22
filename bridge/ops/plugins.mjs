@@ -34,8 +34,18 @@ export async function handle(params) {
   if (action === "install") {
     const name = String(params.name ?? "").trim();
     if (!name) throw new BridgeError("bad-request", "a plugin name is required");
-    const res = await runCoreScript("plugins", ["add", name], { timeout: 180_000 });
-    return { ok: res.code === 0, name, output: res.output };
+    // An install clones a third-party repository. It is confirmed, never
+    // assumed: without `confirm` this is the core's own preview, which names
+    // the pinned SHA the install would use.
+    const args = ["add", name];
+    if (params.confirm === true) args.push("--confirm");
+    const res = await runCoreScript("plugins", args, { timeout: 180_000 });
+    return {
+      ok: res.code === 0,
+      name,
+      installed: params.confirm === true && res.code === 0,
+      output: res.output,
+    };
   }
 
   if (action === "audit") {

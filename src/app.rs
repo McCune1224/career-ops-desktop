@@ -109,6 +109,8 @@ pub struct AppState {
     pub version: Option<Version>,
     /// What the screening pack for one application says.
     pub questions: Option<String>,
+    /// The personalization sections the editor offers.
+    pub personalization: Option<Vec<PersonalizationSection>>,
     /// The line a screen shows after a one-shot op answered.
     pub notice: String,
     /// The last message for the user, and whether it is an error.
@@ -202,6 +204,7 @@ pub enum RunKind {
     Pdf,
     Cover,
     Email,
+    Contacto,
     OfferPrep,
     Prep,
     Plan,
@@ -212,11 +215,12 @@ pub enum RunKind {
 }
 
 /// Every kind, in the order the screen offers them.
-pub const RUN_KINDS: [RunKind; 11] = [
+pub const RUN_KINDS: [RunKind; 12] = [
     RunKind::Evaluate,
     RunKind::Pdf,
     RunKind::Cover,
     RunKind::Email,
+    RunKind::Contacto,
     RunKind::OfferPrep,
     RunKind::Prep,
     RunKind::Plan,
@@ -233,6 +237,7 @@ impl RunKind {
             RunKind::Pdf => "pdf",
             RunKind::Cover => "cover",
             RunKind::Email => "email",
+            RunKind::Contacto => "contacto",
             RunKind::OfferPrep => "offer-prep",
             RunKind::Prep => "prep",
             RunKind::Plan => "plan",
@@ -249,6 +254,7 @@ impl RunKind {
             RunKind::Pdf => "Tailor the CV (PDF)",
             RunKind::Cover => "Draft a cover letter",
             RunKind::Email => "Draft an application email",
+            RunKind::Contacto => "Draft outreach to a contact",
             RunKind::OfferPrep => "Walk an offer's clauses",
             RunKind::Prep => "Build an interview prep pack",
             RunKind::Plan => "Plan interview preparation",
@@ -265,6 +271,7 @@ impl RunKind {
             RunKind::Pdf => "Paste the report number or the company. The agent tailors your CV and it is rendered to PDF.",
             RunKind::Cover => "Paste the report number or the company, plus a short brief of what to say.",
             RunKind::Email => "Paste the report number or the company. The agent drafts the email; nothing is ever sent.",
+            RunKind::Contacto => "Paste the company. The agent finds the right contact and drafts a message that fits the channel's own limit. Nothing is sent.",
             RunKind::OfferPrep => "Paste the offer text. The agent walks the clauses and lists the questions for your lawyer.",
             RunKind::Prep => "Paste the report number or the company. The agent builds the prep pack and saves it for you.",
             RunKind::Plan => "Paste the report number or the company. The agent allocates preparation time to named topics.",
@@ -356,6 +363,16 @@ pub struct CvEditor {
     pub dirty: bool,
 }
 
+/// One personalization section, as the editor shows it.
+#[derive(Debug, Clone, Default)]
+pub struct PersonalizationSection {
+    pub id: String,
+    pub heading: String,
+    /// `filled`, `template` or `missing`.
+    pub state: String,
+    pub body: String,
+}
+
 /// The outcome form's state.
 #[derive(Debug, Clone)]
 pub struct OutcomeForm {
@@ -439,6 +456,10 @@ pub struct CareerOpsApp {
     pub outreach_report: String,
     /// The request queued for a later session.
     pub inbox_request: String,
+    /// Which personalization section is being edited.
+    pub personalization_section: String,
+    /// The text the editor holds for it.
+    pub personalization_body: String,
     /// egui's clock at the last frame, so an event folded outside a `Ui` still
     /// gets a timestamp.
     pub run_now: f64,
@@ -470,6 +491,8 @@ impl CareerOpsApp {
             outreach_invite: String::new(),
             outreach_report: String::new(),
             inbox_request: String::new(),
+            personalization_section: String::new(),
+            personalization_body: String::new(),
             run_now: 0.0,
         }
     }
@@ -1161,6 +1184,70 @@ impl CareerOpsApp {
                 self.state.say(format!("cleared the pinned date for #{app_num}"));
             }
             Err(e) => self.state.fail(format!("could not clear the pin: {e}")),
+        }
+    }
+
+    /// Load the personalization sections and the body the editor starts from.
+    pub fn load_personalization(&mut self) {
+        match self
+            .backend
+            .call("profile", json!({ "action": "state" }))
+        {
+            Ok(value) => {
+                let sections = value
+                    .get("personalization")
+                    .and_then(|p| p.get("sections"))
+                    .and_then(serde_json::Value::as_array)
+                    .cloned()
+                    .unwrap_or_default();
+                let bodies = value.get("bodies").cloned().unwrap_or(serde_json::Value::Null);
+                let mut listed = Vec::new();
+                for section in &sections {
+                    let id = section.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                    let heading = section.get("heading").and_then(|v| v.as_str()).unwrap_or("");
+                    let state = section.get("state").and_then(|v| v.as_str()).unwrap_or("");
+                    let body = bodies.get(id).and_then(|v| v.as_str()).unwrap_or("");
+                    listed.push(PersonalizationSection {
+                        id: id.to_string(),
+                        heading: heading.to_string(),
+                        state: state.to_string(),
+                        body: body.to_string(),
+                    });
+                }
+                if self.personalization_section.is_empty() {
+                    if let Some(first) = listed.first() {
+                        self.personalization_section = first.id.clone();
+                        self.personalization_body = first.body.clone();
+                    }
+                }
+                self.state.personalization = Some(listed);
+                self.state.say("read the personalization");
+            }
+            Err(e) => self.state.fail(format!("could not read the personalization: {e}")),
+        }
+    }
+
+    /// Save ONE personalization section.
+    ///
+    /// The engine merges that section into the file and refuses a file it
+    /// cannot parse; the client never writes the file itself.
+    pub fn save_personalization(&mut self) {
+        let section = self.personalization_section.clone();
+        if section.is_empty() {
+            self.state.fail("pick a section first");
+            return;
+        }
+        let params = json!({
+            "action": "save",
+            "section": section,
+            "body": self.personalization_body,
+        });
+        match self.backend.call("profile", params) {
+            Ok(_) => {
+                self.state.say("saved that one section");
+                self.load_personalization();
+            }
+            Err(e) => self.state.fail(format!("could not save the section: {e}")),
         }
     }
 

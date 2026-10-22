@@ -24,9 +24,6 @@ fn checks_card(ui: &mut egui::Ui, app: &mut CareerOpsApp, t: Palette) {
             if crate::views::ghost_button(ui, "Skill gaps").clicked() {
                 app.load_skill_gaps();
             }
-            if crate::views::ghost_button(ui, "Compare to cv.md").clicked() {
-                app.check_cv_structure();
-            }
             if crate::views::ghost_button(ui, "Import from documents/").clicked() {
                 app.run_op("profile", serde_json::json!({ "action": "intake" }));
             }

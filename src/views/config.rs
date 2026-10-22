@@ -345,13 +345,11 @@ fn language_section(ui: &mut egui::Ui, app: &mut CareerOpsApp, t: Palette) {
                 Err(e) => app.state.fail(format!("could not read the language: {e}")),
             }
         }
-        if ghost_button(ui, "Turn the personalization on").clicked() {
-            app.run_op(
-                "profile",
-                serde_json::json!({ "action": "state" }),
-            );
+        if ghost_button(ui, "Personalization").clicked() {
+            app.load_personalization();
         }
     });
+    personalization_editor(ui, app, t);
     if !app.state.notice.is_empty() {
         ui.label(
             RichText::new(&app.state.notice)
@@ -360,6 +358,64 @@ fn language_section(ui: &mut egui::Ui, app: &mut CareerOpsApp, t: Palette) {
                 .color(t.fg_muted),
         );
     }
+}
+
+/// The personalization editor: ONE section at a time.
+///
+/// The file is the user's, and a section edit changes only that section: the
+/// engine splices the section into the file it read and refuses a file it
+/// cannot parse. The client never writes the file itself.
+fn personalization_editor(ui: &mut egui::Ui, app: &mut CareerOpsApp, t: Palette) {
+    let Some(sections) = app.state.personalization.clone() else {
+        return;
+    };
+    if sections.is_empty() {
+        return;
+    }
+    ui.add_space(8.0);
+    ui.horizontal_wrapped(|ui| {
+        for section in &sections {
+            let selected = app.personalization_section == section.id;
+            let label = format!(
+                "{} ({})",
+                section.heading.trim_start_matches("## "),
+                section.state
+            );
+            let (fill, stroke, color) = if selected {
+                (t.tint(t.accent).gamma_multiply(2.4), t.accent, t.fg)
+            } else {
+                (egui::Color32::TRANSPARENT, t.border, t.fg_muted)
+            };
+            let button = egui::Button::new(
+                RichText::new(label).text_style(theme::meta()).color(color),
+            )
+            .fill(fill)
+            .stroke(egui::Stroke::new(1.0, stroke))
+            .corner_radius(egui::CornerRadius::same(6))
+            .min_size(egui::vec2(0.0, 24.0));
+            if ui.add(button).clicked() {
+                app.personalization_section = section.id.clone();
+                app.personalization_body = section.body.clone();
+            }
+        }
+    });
+    ui.add_space(8.0);
+    ui.add(
+        egui::TextEdit::multiline(&mut app.personalization_body)
+            .desired_width(f32::INFINITY)
+            .desired_rows(4),
+    );
+    ui.add_space(6.0);
+    ui.horizontal_wrapped(|ui| {
+        if primary_button(ui, "Save this section", !app.personalization_section.is_empty()).clicked() {
+            app.save_personalization();
+        }
+        ui.label(
+            RichText::new("only this section changes; the rest of the file is left as it is")
+                .text_style(theme::meta())
+                .color(t.fg_muted),
+        );
+    });
 }
 
 /// The checklist of requests for a later session.
@@ -449,6 +505,20 @@ fn plugins_section(ui: &mut egui::Ui, app: &mut CareerOpsApp, t: Palette) {
     ui.horizontal_wrapped(|ui| {
         if ghost_button(ui, "Reload").clicked() {
             app.load_plugins();
+        }
+        ui.add(
+            egui::TextEdit::singleline(&mut app.inbox_request)
+                .desired_width(200.0)
+                .hint_text("a plugin name to add"),
+        );
+        if ghost_button(ui, "Add a plugin").clicked() {
+            let name = app.inbox_request.clone();
+            // The install is confirmed: without it the core only previews the
+            // pinned SHA the install would clone.
+            app.run_op(
+                "plugins",
+                serde_json::json!({ "action": "install", "name": name, "confirm": true }),
+            );
         }
         if ghost_button(ui, "Audit a plugin").clicked() {
             let dir = std::env::var("CAREER_OPS_PLUGIN_DIR").unwrap_or_default();
